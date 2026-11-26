@@ -1,0 +1,64 @@
+"""Node-level tests with ComfyUI's output folder pointed at a temp dir."""
+
+import pytest
+
+from promptgen import NODE_CLASS_MAPPINGS, comfy
+from promptgen.nodes.counter import PromptGenBatchText, PromptGenCounter
+from promptgen.nodes.text import PromptGenShowText, PromptGenTemplate
+
+
+@pytest.fixture
+def out(tmp_path, monkeypatch):
+    monkeypatch.setattr(comfy, "output_dir", lambda: str(tmp_path))
+    for module in ("promptgen.nodes.common", "promptgen.nodes.counter"):
+        monkeypatch.setattr(f"{module}.output_dir", lambda: str(tmp_path))
+    return tmp_path
+
+
+def test_all_nodes_registered_with_stable_ids():
+    assert set(NODE_CLASS_MAPPINGS) == {
+        "PromptGenLineList", "PromptGenTemplate", "PromptGenOllamaRewrite", "PromptGenShowText",
+        "PromptGenCounter", "PromptGenBatchText", "PromptGenSaveSettings",
+    }
+
+
+def test_template_node_accepts_any_numbered_input():
+    optional = PromptGenTemplate.INPUT_TYPES()["optional"]
+    assert "7" in optional and optional["7"][0] == "STRING"
+    (prompt,) = PromptGenTemplate().run("a {1}", 0, **{"1": "cat"})
+    assert prompt == "a cat"
+
+
+def test_counter_and_save_node_together(out):
+    counter, save = PromptGenCounter(), PromptGenShowText()
+    saved = []
+    for _ in range(3):
+        name = counter.run("prompt", 4, 1, True, unique_id="9")["result"][1]
+        saved.append(save.run("x", True, "promptgen/after/", name)["ui"]["saved_file"][0].replace("\\", "/"))
+    assert saved == ["promptgen/after/prompt_0001.txt", "promptgen/after/prompt_0002.txt",
+                     "promptgen/after/prompt_0003.txt"]
+
+
+def test_counter_cache_key():
+    assert PromptGenCounter.IS_CHANGED(auto_increment=True) != PromptGenCounter.IS_CHANGED(auto_increment=True)
+    assert PromptGenCounter.IS_CHANGED(auto_increment=False) == ""
+
+
+def test_save_off_reports_not_saved(out):
+    assert PromptGenShowText().run("x", False, "p")["ui"]["saved_file"] == ["(not saved)"]
+
+
+def test_batch_loader_walks_folder(out):
+    folder = out / "prompts"
+    folder.mkdir()
+    for name, text in [("b.txt", "second"), ("a.txt", "first"), ("skip.png", "")]:
+        (folder / name).write_text(text, encoding="utf-8")
+    node = PromptGenBatchText()
+    runs = [node.run("prompts", 0, True, "start over", unique_id="3")["result"] for _ in range(3)]
+    assert runs == [("first", "a", 0, 2), ("second", "b", 1, 2), ("first", "a", 0, 2)]
+
+    node2 = PromptGenBatchText()
+    node2.run("prompts", 0, True, "stop", unique_id="4")
+    node2.run("prompts", 0, True, "stop", unique_id="4")
+    with pytest.raises(RuntimeError, match="are done"):
+        node2.run("prompts", 0, True, "stop", unique_id="4")

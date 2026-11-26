@@ -114,12 +114,21 @@ Shows the incoming text on the node, passes it on, and can save it as a `.txt` f
 
 How the file name is made:
 - **Without `filename`:** `filename_prefix` plus the next free number. `promptgen/text` saves as `output/promptgen/text_00001.txt`, then `text_00002.txt`, and so on.
-- **With `filename`:** `filename_prefix` is put in front of it and `.txt` is added. Prefix `promptgen/before` with filename `prompt_0001` saves as `output/promptgen/before_prompt_0001.txt`. A prefix ending in `/`, like `promptgen/`, is used as a folder only: `output/promptgen/prompt_0001.txt`.
+- **With `filename`:** the parts are put together in this order: the folder from `filename` (outermost), then the folder from `filename_prefix`, then the prefix's name part and the file name joined with `_`, then `.txt`. A prefix ending in `/` is a folder only.
+
+  | `filename` (e.g. from the Counter) | `filename_prefix` | Saved as (inside `output/`) |
+  |---|---|---|
+  | `ArtemyFantasy/prompt_0001` | `before/` | `ArtemyFantasy/before/prompt_0001.txt` |
+  | `ArtemyFantasy/prompt_0001` | `before/rewrite` | `ArtemyFantasy/before/rewrite_prompt_0001.txt` |
+  | `prompt_0001` | `promptgen/before` | `promptgen/before_prompt_0001.txt` |
+  | `prompt_0001` | `promptgen/` | `promptgen/prompt_0001.txt` |
+
+  So a Counter prefix like `ArtemyFantasy/prompt` puts a whole run in its own project folder, and each save node picks its subfolder inside it.
 - Repeated separators such as `__`, `--` or `_-` become a single one, and separators at the start or end of a name are removed.
 - Existing files are never overwritten. If a name is taken, `_2`, `_3`, ... is added.
 - Paths outside the `output` folder are refused.
 
-Using two save nodes with different prefixes, for example `promptgen/before/` and `promptgen/after/`, lets one Counter name both the original prompt and the rewritten prompt without the files clashing.
+Using two save nodes with different prefixes, for example `before/` and `after/`, lets one Counter name both the original prompt and the rewritten prompt without the files clashing.
 
 ### PromptGen Counter
 
@@ -236,3 +245,44 @@ Batch Text Loader (folder "promptgen/after") ── text ──► CLIP Text Enc
 - **The counter doesn't go up:** check that `auto_increment` is on.
 - **The Ollama model list is empty:** start Ollama, then press **R** in ComfyUI.
 - **The rewrite contains the model's reasoning:** leave `thinking` off.
+
+---
+
+## Development
+
+```
+comfyui-promptgen/
+  __init__.py              entry point ComfyUI loads (node list, web folder, routes)
+  promptgen/
+    __init__.py            node registry: node IDs and display names
+    comfy.py               the only module that touches ComfyUI (output folder, logging)
+    routes.py              /promptgen/count_files, used by the "Queue all files" button
+    core/                  plain Python, no ComfyUI imports, fully tested
+      templating.py        {1}, {2} ... filling
+      filenames.py         name cleaning, prefix + filename, safe saving
+      counting.py          shared auto-increment (in memory only)
+      textfiles.py         finding and reading .txt files
+      settings.py          KSampler / model / resolution summary
+      ollama_client.py     Ollama HTTP client
+    nodes/                 thin ComfyUI node classes
+      text.py              Line List, Template, Show / Save Text
+      counter.py           Counter, Batch Text Loader
+      settings.py          Save Settings
+      ollama.py            Ollama Rewrite
+      common.py            shared node pieces
+  js/                      frontend scripts (common.js holds shared helpers)
+  tests/                   pytest tests
+```
+
+Run the tests (no ComfyUI needed):
+
+```
+pip install pytest
+pytest
+```
+
+Node IDs (`PromptGenCounter`, ...) and input names are part of saved workflows. Don't rename them.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

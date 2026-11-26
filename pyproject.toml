@@ -1,0 +1,19 @@
+[project]
+name = "comfyui-promptgen"
+description = "ComfyUI nodes that build random prompts from text snippets, optionally rewrite them with Ollama, and save/load prompts and settings as text files."
+version = "1.0.0"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = []
+
+[project.urls]
+# Repository = "https://github.com/<you>/comfyui-promptgen"
+
+[tool.comfy]
+PublisherId = ""
+DisplayName = "PromptGen"
+Icon = ""
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
