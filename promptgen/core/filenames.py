@@ -1,4 +1,4 @@
-"""Building safe .txt file names inside ComfyUI's output folder and writing the files.
+"""Building safe file names (.txt by default) inside ComfyUI's output folder and writing the files.
 
 Rules:
 - repeated separators ('__', '--', '_-') become one, and are trimmed from both ends of each part;
@@ -67,38 +67,38 @@ def _write(path: str, text: str) -> str:
     return path
 
 
-def save_numbered(text: str, filename_prefix: str, output_dir: str) -> str:
-    """Save as <output>/<prefix>_00001.txt using the next free number. Returns the path."""
+def save_numbered(text: str, filename_prefix: str, output_dir: str, ext: str = ".txt") -> str:
+    """Save as <output>/<prefix>_00001<ext> using the next free number. Returns the path."""
     prefix = clean_name(filename_prefix) or "promptgen/text"
     n = 1
     while True:
-        path = resolve_in_output(f"{prefix}_{n:05}.txt", output_dir)
+        path = resolve_in_output(f"{prefix}_{n:05}{ext}", output_dir)
         if not os.path.exists(path):
             return _write(path, text)
         n += 1
 
 
-def save_named(text: str, filename: str, output_dir: str) -> str:
-    """Save as <output>/<filename>.txt. If it exists, add _2, _3, ... Returns the path."""
+def save_named(text: str, filename: str, output_dir: str, ext: str = ".txt") -> str:
+    """Save as <output>/<filename><ext>. If it exists, add _2, _3, ... Returns the path."""
     name = str(filename).strip()
-    if name.lower().endswith(".txt"):
-        name = name[:-4]
+    if name.lower().endswith(ext.lower()):
+        name = name[: -len(ext)]
     name = clean_name(name)
     if not name:
         raise ValueError(f"Filename '{filename}' is empty after cleaning.")
-    path = resolve_in_output(name + ".txt", output_dir)
+    path = resolve_in_output(name + ext, output_dir)
     n = 2
     while os.path.exists(path):
-        path = resolve_in_output(f"{name}_{n}.txt", output_dir)
+        path = resolve_in_output(f"{name}_{n}{ext}", output_dir)
         n += 1
     return _write(path, text)
 
 
-def save_text(text: str, filename_prefix: str, filename: str | None, output_dir: str) -> str:
+def save_text(text: str, filename_prefix: str, filename: str | None, output_dir: str, ext: str = ".txt") -> str:
     """Save text the way the save nodes do: prefix + filename if a filename is given, else numbered."""
     if filename:
-        return save_named(text, combine_name(filename_prefix, filename), output_dir)
-    return save_numbered(text, filename_prefix, output_dir)
+        return save_named(text, combine_name(filename_prefix, filename), output_dir, ext)
+    return save_numbered(text, filename_prefix, output_dir, ext)
 
 
 def display_path(path: str, output_dir: str) -> str:

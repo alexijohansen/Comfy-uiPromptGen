@@ -1,7 +1,8 @@
-"""Turning a ComfyUI API prompt into a readable summary of the sampler settings."""
+"""Collecting the generation settings of a ComfyUI API prompt (samplers, model, resolution)."""
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 SAMPLER_KEYS = ["seed", "noise_seed", "steps", "cfg", "sampler_name", "scheduler", "denoise",
@@ -40,29 +41,52 @@ def _is_sampler(class_type: str, inputs: dict) -> bool:
     return class_type.startswith("KSampler") or ("sampler_name" in inputs and "steps" in inputs)
 
 
-def describe_settings(prompt: dict | None, image_shape: tuple | None = None) -> str:
-    """Summary of every sampler, the model and the resolution in prompt.
+def _sorted_nodes(prompt: dict):
+    return sorted(prompt.items(), key=lambda kv: (len(kv[0]), kv[0]))
+
+
+def collect_settings(prompt: dict | None, image_shape: tuple | None = None,
+                     positive: str | None = None, negative: str | None = None) -> dict:
+    """Settings of a run as a dict, ready to be written as JSON.
 
     image_shape is (batch, height, width, channels) of the decoded image, if available;
     otherwise the size is taken from the Empty Latent Image node.
     """
     prompt = prompt or {}
-    lines = []
-    for nid, node in sorted(prompt.items(), key=lambda kv: (len(kv[0]), kv[0])):
+    samplers, models = [], []
+    for nid, node in _sorted_nodes(prompt):
         ctype, inputs = node.get("class_type", ""), node.get("inputs", {})
         if _is_sampler(ctype, inputs):
-            lines.append(f"{ctype} (node {nid})")
-            lines += [f"  {k}: {resolve_value(prompt, inputs[k])}" for k in SAMPLER_KEYS if k in inputs]
+            entry = {"node": nid, "type": ctype}
+            entry.update({k: resolve_value(prompt, inputs[k]) for k in SAMPLER_KEYS if k in inputs})
+            samplers.append(entry)
         elif ctype in MODEL_LOADERS and MODEL_LOADERS[ctype] in inputs:
-            lines.append(f"Model: {resolve_value(prompt, inputs[MODEL_LOADERS[ctype]])}")
+            models.append(resolve_value(prompt, inputs[MODEL_LOADERS[ctype]]))
+
+    resolution = None
     if image_shape is not None:
-        batch, height, width = image_shape[0], image_shape[1], image_shape[2]
-        lines.append(f"Resolution: {width} x {height} (batch {batch})")
+        resolution = {"width": image_shape[2], "height": image_shape[1], "batch_size": image_shape[0],
+                      "source": "image"}
     else:
-        for nid, node in prompt.items():
+        for nid, node in _sorted_nodes(prompt):
             inputs = node.get("inputs", {})
             if "width" in inputs and "height" in inputs and "Latent" in node.get("class_type", ""):
-                w, h = resolve_value(prompt, inputs["width"]), resolve_value(prompt, inputs["height"])
-                b = resolve_value(prompt, inputs.get("batch_size", 1))
-                lines.append(f"Resolution: {w} x {h} (batch {b}, from {node['class_type']} node {nid})")
-    return "\n".join(lines) if lines else "(no KSampler found in this workflow)"
+                resolution = {
+                    "width": resolve_value(prompt, inputs["width"]),
+                    "height": resolve_value(prompt, inputs["height"]),
+                    "batch_size": resolve_value(prompt, inputs.get("batch_size", 1)),
+                    "source": f"{node['class_type']} node {nid}",
+                }
+                break
+
+    return {
+        "positive_prompt": positive,
+        "negative_prompt": negative,
+        "model": models[0] if len(models) == 1 else (models or None),
+        "resolution": resolution,
+        "samplers": samplers,
+    }
+
+
+def settings_json(settings: dict) -> str:
+    return json.dumps(settings, indent=2, ensure_ascii=False)

@@ -12,7 +12,7 @@ All nodes are in the **PromptGen** category of the node menu.
 | [PromptGen Show / Save Text](#promptgen-show--save-text) | Shows text on the node and can save it as a `.txt` file |
 | [PromptGen Counter](#promptgen-counter) | A number that goes up with every run, plus a padded name like `prompt_0001` |
 | [PromptGen Batch Text Loader](#promptgen-batch-text-loader) | Loads the next `.txt` file from a folder on every run |
-| [PromptGen Save Settings](#promptgen-save-settings) | Saves the KSampler settings, seed, model and resolution as a `.txt` file |
+| [PromptGen Save Settings](#promptgen-save-settings) | Saves the prompts, KSampler settings, seed, model and resolution as a `.json` file |
 
 ## Installation
 
@@ -25,7 +25,7 @@ All nodes are in the **PromptGen** category of the node menu.
 
 You don't need any extra Python packages. The Ollama node needs [Ollama](https://ollama.com) running, by default at `http://localhost:11434`, with at least one model pulled (for example `ollama pull llama3.1`).
 
-None of the nodes keep their own state on disk. Counters live in the workflow and in memory. The only files written are the `.txt` files you ask the save nodes to write, and they always go inside ComfyUI's `output` folder.
+None of the nodes keep their own state on disk. Counters live in the workflow and in memory. The only files written are the `.txt` and `.json` files you ask the save nodes to write, and they always go inside ComfyUI's `output` folder.
 
 ---
 
@@ -174,15 +174,41 @@ Only `.txt` files directly in the folder are used, not files in subfolders.
 
 ### PromptGen Save Settings
 
-Saves the generation settings of a run as a `.txt` file and shows them on the node. You don't need to wire the settings in: the node reads them from the workflow that is running.
+Saves the settings of a run as a `.json` file and shows them on the node. Connect the positive and negative prompt yourself. The sampler settings, model and resolution are read from the running workflow, so you don't need to wire those in.
 
 What it records:
-- For every **KSampler** and **KSampler Advanced**: `seed` / `noise_seed`, `steps`, `cfg`, `sampler_name`, `scheduler`, `denoise`, and for the advanced sampler also `add_noise`, `start_at_step`, `end_at_step` and `return_with_leftover_noise`. The seed is the one actually used in that run, also when the KSampler's seed is set to *randomize*.
-- The **model**, from Load Checkpoint or Load Diffusion Model.
-- The **resolution**: taken from the connected image if there is one, otherwise from the Empty Latent Image node.
+- **Prompts:** whatever you connect to `positive_prompt` and `negative_prompt`. `null` when nothing is connected.
+- **Samplers:** for every **KSampler** and **KSampler Advanced**, `seed` / `noise_seed`, `steps`, `cfg`, `sampler_name`, `scheduler` and `denoise`. The advanced sampler also records `add_noise`, `start_at_step`, `end_at_step` and `return_with_leftover_noise`. The seed is the one actually used in that run, even when the KSampler's seed is set to *randomize*.
+- **Model:** from Load Checkpoint or Load Diffusion Model. A list when the workflow has more than one.
+- **Resolution:** taken from the connected image if there is one, otherwise from the Empty Latent Image node.
 
 | Input | Type | Description |
 |---|---|---|
+| `filename_prefix` | STRING | Works the same as in Show / Save Text. Default `promptgen/settings`. |
+| `image` (optional) | IMAGE | Connect the decoded image, for example from VAE Decode. The node then runs after the image is made and records its real size. |
+| `filename` (optional) | STRING | Works the same as in Show / Save Text, for example the `name` from the Counter or the Batch Text Loader. The file gets `.json` instead of `.txt`. |
+| `positive_prompt` (optional) | STRING | The positive prompt, for example the Batch Text Loader's `text` or the Ollama Rewrite output. |
+| `negative_prompt` (optional) | STRING | The negative prompt. |
+
+| Output | Type | Description |
+|---|---|---|
+| `json` | STRING | The saved JSON text. |
+
+Example file:
+```json
+{
+  "positive_prompt": "A 2d european comicbook illustration of a cow standing on a water lily ...",
+  "negative_prompt": "blurry, low quality",
+  "model": "sdxl.safetensors",
+  "resolution": { "width": 832, "height": 1216, "batch_size": 1, "source": "image" },
+  "samplers": [
+    { "node": "3", "type": "KSampler", "seed": 123456, "steps": 30, "cfg": 6.5,
+      "sampler_name": "euler", "scheduler": "normal", "denoise": 1.0 }
+  ]
+}
+```
+
+---|---|---|
 | `filename_prefix` | STRING | Works the same as in Show / Save Text. Default `promptgen/settings`. |
 | `image` (optional) | IMAGE | Connect the decoded image, for example from VAE Decode. The node then runs after the image is made and records its real size. |
 | `filename` (optional) | STRING | Works the same as in Show / Save Text, for example the `name` from the Counter or the Batch Text Loader. |
@@ -234,7 +260,7 @@ Batch Text Loader (folder "promptgen/after") ── text ──► CLIP Text Enc
 
 1. Add a **Batch Text Loader**, set `folder` to the folder from workflow 1 (for example `promptgen/after`), and set `index` to 0.
 2. Connect `text` to the `text` input of CLIP Text Encode (positive). Build the rest of your usual image workflow.
-3. Optionally add **Save Settings**: connect VAE Decode's image to `image` and the loader's `name` to `filename`, so every image gets a matching settings file.
+3. Optionally add **Save Settings**: connect VAE Decode's image to `image`, the loader's `name` to `filename` and its `text` to `positive_prompt`, so every image gets a matching settings `.json`.
 4. Click **Queue all files** on the Batch Text Loader. One image is made for each prompt file.
 
 ---
@@ -262,7 +288,7 @@ comfyui-promptgen/
       filenames.py         name cleaning, prefix + filename, safe saving
       counting.py          shared auto-increment (in memory only)
       textfiles.py         finding and reading .txt files
-      settings.py          KSampler / model / resolution summary
+      settings.py          collects prompts, samplers, model and resolution for the JSON
       ollama_client.py     Ollama HTTP client
     nodes/                 thin ComfyUI node classes
       text.py              Line List, Template, Show / Save Text

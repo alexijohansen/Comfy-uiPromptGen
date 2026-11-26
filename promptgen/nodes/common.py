@@ -33,9 +33,9 @@ class AutoIncrementNode:
         return ""
 
 
-def save_and_describe(text: str, filename_prefix: str, filename: str | None, what: str) -> str:
+def save_and_describe(text: str, filename_prefix: str, filename: str | None, what: str, ext: str = ".txt") -> str:
     """Save text like the save nodes do and return the path to show on the node."""
     out = output_dir()
-    path = save_text(text, filename_prefix, filename, out)
+    path = save_text(text, filename_prefix, filename, out, ext)
     log.info("Saved %s to %s", what, path)
     return display_path(path, out)

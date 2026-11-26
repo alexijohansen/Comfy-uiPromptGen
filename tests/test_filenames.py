@@ -54,3 +54,8 @@ def test_txt_extension_not_doubled(tmp_path):
 def test_paths_cannot_leave_output_folder(tmp_path):
     with pytest.raises(ValueError):
         save_text("x", "", "../evil", str(tmp_path / "out"))
+
+
+def test_other_extension(tmp_path):
+    path = save_text("{}", "", "settings.json", str(tmp_path), ext=".json")
+    assert os.path.basename(path) == "settings.json"

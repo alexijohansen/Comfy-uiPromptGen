@@ -62,3 +62,15 @@ def test_batch_loader_walks_folder(out):
     node2.run("prompts", 0, True, "stop", unique_id="4")
     with pytest.raises(RuntimeError, match="are done"):
         node2.run("prompts", 0, True, "stop", unique_id="4")
+
+
+def test_save_settings_writes_json(out):
+    import json
+
+    from promptgen.nodes.settings import PromptGenSaveSettings
+
+    ui = PromptGenSaveSettings().run("before/", None, "ArtemyFantasy/prompt_0001", "a cat", "blurry",
+                                     prompt={})["ui"]
+    assert ui["saved_file"][0].replace("\\", "/") == "ArtemyFantasy/before/prompt_0001.json"
+    data = json.loads((out / "ArtemyFantasy" / "before" / "prompt_0001.json").read_text(encoding="utf-8"))
+    assert data["positive_prompt"] == "a cat" and data["negative_prompt"] == "blurry"
