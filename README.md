@@ -12,7 +12,7 @@ All nodes are in the **PromptGen** category of the node menu.
 | [PromptGen Show / Save Text](#promptgen-show--save-text) | Shows text on the node and can save it as a `.txt` file |
 | [PromptGen Counter](#promptgen-counter) | A number that goes up with every run, plus a padded name like `prompt_0001` |
 | [PromptGen Batch Text Loader](#promptgen-batch-text-loader) | Loads the next `.txt` file from a folder on every run |
-| [PromptGen Save Settings](#promptgen-save-settings) | Saves the prompts, KSampler settings, seed, model and resolution as a `.json` file |
+| [PromptGen Save Settings](#promptgen-save-settings) | Saves the prompts, KSampler settings, seed, model, LoRAs and resolution as a `.json` file |
 
 ## Installation
 
@@ -174,12 +174,13 @@ Only `.txt` files directly in the folder are used, not files in subfolders.
 
 ### PromptGen Save Settings
 
-Saves the settings of a run as a `.json` file and shows them on the node. Connect the positive and negative prompt yourself. The sampler settings, model and resolution are read from the running workflow, so you don't need to wire those in.
+Saves the settings of a run as a `.json` file and shows them on the node. Connect the positive and negative prompt yourself. The sampler settings, models, LoRAs and resolution are read from the running workflow, so you don't need to wire those in.
 
 What it records:
 - **Prompts:** whatever you connect to `positive_prompt` and `negative_prompt`. `null` when nothing is connected.
 - **Samplers:** for every **KSampler** and **KSampler Advanced**, `seed` / `noise_seed`, `steps`, `cfg`, `sampler_name`, `scheduler` and `denoise`. The advanced sampler also records `add_noise`, `start_at_step`, `end_at_step` and `return_with_leftover_noise`. The seed is the one actually used in that run, even when the KSampler's seed is set to *randomize*.
-- **Model:** from Load Checkpoint or Load Diffusion Model. A list when the workflow has more than one.
+- **Model:** `model` is the name of the first model loader (Load Checkpoint, Load Diffusion Model / UNET, GGUF loaders and other nodes with a `ckpt_name`, `unet_name` or `model_name` input). `models` lists every loader with its node id and type.
+- **LoRAs:** `loras` lists every LoRA in the workflow with its name and strengths: `strength_model` and `strength_clip` for Load LoRA, `strength_model` for LoraLoaderModelOnly, and `strength` for multi-LoRA nodes such as rgthree's Power Lora Loader (only LoRAs that are switched on). It's an empty list when there are none.
 - **Resolution:** taken from the connected image if there is one, otherwise from the Empty Latent Image node.
 
 | Input | Type | Description |
@@ -200,6 +201,11 @@ Example file:
   "positive_prompt": "A 2d european comicbook illustration of a cow standing on a water lily ...",
   "negative_prompt": "blurry, low quality",
   "model": "sdxl.safetensors",
+  "models": [ { "node": "4", "type": "CheckpointLoaderSimple", "name": "sdxl.safetensors" } ],
+  "loras": [
+    { "node": "10", "type": "LoraLoader", "name": "comic_style.safetensors",
+      "strength_model": 0.8, "strength_clip": 0.6 }
+  ],
   "resolution": { "width": 832, "height": 1216, "batch_size": 1, "source": "image" },
   "samplers": [
     { "node": "3", "type": "KSampler", "seed": 123456, "steps": 30, "cfg": 6.5,
@@ -288,7 +294,7 @@ comfyui-promptgen/
       filenames.py         name cleaning, prefix + filename, safe saving
       counting.py          shared auto-increment (in memory only)
       textfiles.py         finding and reading .txt files
-      settings.py          collects prompts, samplers, model and resolution for the JSON
+      settings.py          collects prompts, samplers, models, LoRAs and resolution for the JSON
       ollama_client.py     Ollama HTTP client
     nodes/                 thin ComfyUI node classes
       text.py              Line List, Template, Show / Save Text

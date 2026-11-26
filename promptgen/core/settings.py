@@ -1,4 +1,4 @@
-"""Collecting the generation settings of a ComfyUI API prompt (samplers, model, resolution)."""
+"""Collecting the generation settings of a ComfyUI API prompt (samplers, models, LoRAs, resolution)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,10 @@ from typing import Any
 
 SAMPLER_KEYS = ["seed", "noise_seed", "steps", "cfg", "sampler_name", "scheduler", "denoise",
                 "add_noise", "start_at_step", "end_at_step", "return_with_leftover_noise"]
-MODEL_LOADERS = {"CheckpointLoaderSimple": "ckpt_name", "CheckpointLoader": "ckpt_name", "UNETLoader": "unet_name"}
+# Any node with one of these inputs counts as a model loader
+# (Load Checkpoint, Load Diffusion Model / UNETLoader, GGUF loaders, ...).
+MODEL_NAME_INPUTS = ("ckpt_name", "unet_name", "model_name")
+LORA_STRENGTH_INPUTS = ("strength_model", "strength_clip", "strength")
 VALUE_INPUTS = ("value", "seed", "noise_seed", "int", "float", "number")
 MAX_LINK_DEPTH = 5
 
@@ -45,6 +48,29 @@ def _sorted_nodes(prompt: dict):
     return sorted(prompt.items(), key=lambda kv: (len(kv[0]), kv[0]))
 
 
+def _model_entry(prompt: dict, nid: str, ctype: str, inputs: dict) -> dict | None:
+    for key in MODEL_NAME_INPUTS:
+        if key in inputs and "lora_name" not in inputs:
+            return {"node": nid, "type": ctype, "name": resolve_value(prompt, inputs[key])}
+    return None
+
+
+def _lora_entries(prompt: dict, nid: str, ctype: str, inputs: dict) -> list[dict]:
+    """LoRAs in one node: LoraLoader / LoraLoaderModelOnly style (lora_name + strengths),
+    or multi-LoRA nodes that store each LoRA as a dict like {"on": true, "lora": ..., "strength": ...}."""
+    loras = []
+    if "lora_name" in inputs:
+        entry = {"node": nid, "type": ctype, "name": resolve_value(prompt, inputs["lora_name"])}
+        entry.update({k: resolve_value(prompt, inputs[k]) for k in LORA_STRENGTH_INPUTS if k in inputs})
+        loras.append(entry)
+    for value in inputs.values():
+        if isinstance(value, dict) and value.get("lora") and value.get("on", True):
+            entry = {"node": nid, "type": ctype, "name": value["lora"]}
+            entry.update({k: value[k] for k in ("strength", "strengthTwo") if k in value})
+            loras.append(entry)
+    return loras
+
+
 def collect_settings(prompt: dict | None, image_shape: tuple | None = None,
                      positive: str | None = None, negative: str | None = None) -> dict:
     """Settings of a run as a dict, ready to be written as JSON.
@@ -53,15 +79,18 @@ def collect_settings(prompt: dict | None, image_shape: tuple | None = None,
     otherwise the size is taken from the Empty Latent Image node.
     """
     prompt = prompt or {}
-    samplers, models = [], []
+    samplers, models, loras = [], [], []
     for nid, node in _sorted_nodes(prompt):
         ctype, inputs = node.get("class_type", ""), node.get("inputs", {})
         if _is_sampler(ctype, inputs):
             entry = {"node": nid, "type": ctype}
             entry.update({k: resolve_value(prompt, inputs[k]) for k in SAMPLER_KEYS if k in inputs})
             samplers.append(entry)
-        elif ctype in MODEL_LOADERS and MODEL_LOADERS[ctype] in inputs:
-            models.append(resolve_value(prompt, inputs[MODEL_LOADERS[ctype]]))
+            continue
+        model = _model_entry(prompt, nid, ctype, inputs)
+        if model:
+            models.append(model)
+        loras += _lora_entries(prompt, nid, ctype, inputs)
 
     resolution = None
     if image_shape is not None:
@@ -82,7 +111,9 @@ def collect_settings(prompt: dict | None, image_shape: tuple | None = None,
     return {
         "positive_prompt": positive,
         "negative_prompt": negative,
-        "model": models[0] if len(models) == 1 else (models or None),
+        "model": models[0]["name"] if models else None,
+        "models": models,
+        "loras": loras,
         "resolution": resolution,
         "samplers": samplers,
     }

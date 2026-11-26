@@ -10,7 +10,7 @@ from .common import save_and_describe
 class PromptGenSaveSettings:
     DESCRIPTION = (
         "Saves the positive and negative prompt, the settings of every KSampler in this run (seed, steps, cfg, "
-        "sampler, scheduler, denoise), the model and the image resolution to a .json file. Connect the decoded "
+        "sampler, scheduler, denoise), the models, the LoRAs and the image resolution to a .json file. Connect the decoded "
         "image so it runs after the image is made and records the real size. filename / filename_prefix work "
         "like Show / Save Text."
     )
