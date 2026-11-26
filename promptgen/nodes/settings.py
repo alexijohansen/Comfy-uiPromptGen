@@ -27,8 +27,9 @@ class PromptGenSaveSettings:
             "optional": {
                 "image": ("IMAGE",),
                 "filename": ("STRING", {"forceInput": True}),
-                "positive_prompt": ("STRING", {"forceInput": True}),
-                "negative_prompt": ("STRING", {"forceInput": True}),
+                # Text boxes you can type in, or connect any STRING output to (the box then hides).
+                "positive_prompt": ("STRING", {"multiline": True, "default": ""}),
+                "negative_prompt": ("STRING", {"multiline": True, "default": ""}),
             },
             "hidden": {"prompt": "PROMPT"},
         }
@@ -36,7 +37,10 @@ class PromptGenSaveSettings:
     def run(self, filename_prefix, image=None, filename=None, positive_prompt=None, negative_prompt=None,
             prompt=None):
         settings = collect_settings(
-            prompt, tuple(image.shape) if image is not None else None, positive_prompt, negative_prompt
+            prompt,
+            tuple(image.shape) if image is not None else None,
+            positive_prompt or None,  # empty box -> null in the JSON
+            negative_prompt or None,
         )
         text = settings_json(settings)
         saved = save_and_describe(text, filename_prefix, filename, "settings", ext=".json")

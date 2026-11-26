@@ -74,3 +74,15 @@ def test_save_settings_writes_json(out):
     assert ui["saved_file"][0].replace("\\", "/") == "ArtemyFantasy/before/prompt_0001.json"
     data = json.loads((out / "ArtemyFantasy" / "before" / "prompt_0001.json").read_text(encoding="utf-8"))
     assert data["positive_prompt"] == "a cat" and data["negative_prompt"] == "blurry"
+
+
+def test_save_settings_prompts_are_text_boxes_and_empty_is_null(out):
+    import json
+
+    from promptgen.nodes.settings import PromptGenSaveSettings
+
+    spec = PromptGenSaveSettings.INPUT_TYPES()["optional"]["negative_prompt"]
+    assert spec[0] == "STRING" and spec[1].get("multiline") and not spec[1].get("forceInput")
+    PromptGenSaveSettings().run("", None, "s", "a cat", "", prompt={})
+    data = json.loads((out / "s.json").read_text(encoding="utf-8"))
+    assert data["positive_prompt"] == "a cat" and data["negative_prompt"] is None

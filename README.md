@@ -177,7 +177,7 @@ Only `.txt` files directly in the folder are used, not files in subfolders.
 Saves the settings of a run as a `.json` file and shows them on the node. Connect the positive and negative prompt yourself. The sampler settings, models, LoRAs and resolution are read from the running workflow, so you don't need to wire those in.
 
 What it records:
-- **Prompts:** whatever you connect to `positive_prompt` and `negative_prompt`. `null` when nothing is connected.
+- **Prompts:** what you type in, or connect to, `positive_prompt` and `negative_prompt`. `null` when the box is empty.
 - **Samplers:** for every **KSampler** and **KSampler Advanced**, `seed` / `noise_seed`, `steps`, `cfg`, `sampler_name`, `scheduler` and `denoise`. The advanced sampler also records `add_noise`, `start_at_step`, `end_at_step` and `return_with_leftover_noise`. The seed is the one actually used in that run, even when the KSampler's seed is set to *randomize*.
 - **Model:** `model` is the name of the first model loader (Load Checkpoint, Load Diffusion Model / UNET, GGUF loaders and other nodes with a `ckpt_name`, `unet_name` or `model_name` input). `models` lists every loader with its node id and type.
 - **LoRAs:** `loras` lists every LoRA in the workflow with its name and strengths: `strength_model` and `strength_clip` for Load LoRA, `strength_model` for LoraLoaderModelOnly, and `strength` for multi-LoRA nodes such as rgthree's Power Lora Loader (only LoRAs that are switched on). It's an empty list when there are none.
@@ -188,8 +188,8 @@ What it records:
 | `filename_prefix` | STRING | Works the same as in Show / Save Text. Default `promptgen/settings`. |
 | `image` (optional) | IMAGE | Connect the decoded image, for example from VAE Decode. The node then runs after the image is made and records its real size. |
 | `filename` (optional) | STRING | Works the same as in Show / Save Text, for example the `name` from the Counter or the Batch Text Loader. The file gets `.json` instead of `.txt`. |
-| `positive_prompt` (optional) | STRING | The positive prompt, for example the Batch Text Loader's `text` or the Ollama Rewrite output. |
-| `negative_prompt` (optional) | STRING | The negative prompt. |
+| `positive_prompt` (optional) | STRING | The positive prompt. Type it in the box, or connect any text output to it, for example the Batch Text Loader's `text`. |
+| `negative_prompt` (optional) | STRING | The negative prompt. Type it in the box or connect a text output. |
 
 | Output | Type | Description |
 |---|---|---|
