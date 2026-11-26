@@ -1,4 +1,4 @@
-// Counter and Batch Text Loader: with auto_increment on, the number field goes up by 1 each time
+// Counter and the batch loaders: with auto_increment on, the number field goes up by 1 each time
 // the workflow is queued, so the field always shows the next number. The backend counts too
 // (promptgen/core/counting.py), so batches get 1, 2, 3 ... even if the UI doesn't update.
 import { app } from "../../scripts/app.js";
@@ -8,6 +8,7 @@ import { NODES, chain, getWidget, redraw } from "./common.js";
 const COUNTING_WIDGET = {
     [NODES.counter]: "current_number",
     [NODES.batchText]: "index",
+    [NODES.batchImage]: "index",
 };
 
 function setNumber(node, widget, value) {

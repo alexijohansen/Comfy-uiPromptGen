@@ -1,47 +1,53 @@
-// Batch Text Loader: "Queue all files" button. Counts the .txt files left in the folder
-// (from index to the end) and queues that many runs.
+// Batch Text / Image Loader: "Queue all files" / "Queue all images" button. Counts the files left
+// in the folder (from index to the end) and queues that many runs.
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { NODES, chain, getWidget, notify } from "./common.js";
 
-const TITLE = "Queue all files";
+// node ID -> what the button counts (matches KINDS in promptgen/routes.py)
+const BUTTONS = {
+    [NODES.batchText]: { kind: "text", title: "Queue all files", noun: "files" },
+    [NODES.batchImage]: { kind: "images", title: "Queue all images", noun: "images" },
+};
 
-async function countFiles(folder) {
-    const res = await api.fetchApi(`/promptgen/count_files?folder=${encodeURIComponent(folder)}`);
+async function countFiles(folder, kind) {
+    const query = `folder=${encodeURIComponent(folder)}&kind=${kind}`;
+    const res = await api.fetchApi(`/promptgen/count_files?${query}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     return data.total;
 }
 
-async function queueAllFiles(node) {
+async function queueAll(node, { kind, title, noun }) {
     if (getWidget(node, "auto_increment")?.value === false) {
-        notify("warn", TITLE, "Turn auto_increment on first, or every run loads the same file.");
+        notify("warn", title, `Turn auto_increment on first, or every run loads the same ${noun.slice(0, -1)}.`);
         return;
     }
     const index = Number(getWidget(node, "index")?.value ?? 0);
     let total;
     try {
-        total = await countFiles(getWidget(node, "folder")?.value ?? "");
+        total = await countFiles(getWidget(node, "folder")?.value ?? "", kind);
     } catch (e) {
-        notify("error", TITLE, String(e.message ?? e));
+        notify("error", title, String(e.message ?? e));
         return;
     }
     const remaining = getWidget(node, "when_done")?.value === "start over" ? total : total - index;
     if (remaining <= 0) {
-        notify("warn", TITLE, `All ${total} files are done. Set index back to 0 to start again.`);
+        notify("warn", title, `All ${total} ${noun} are done. Set index back to 0 to start again.`);
         return;
     }
-    notify("info", TITLE, `Queueing ${remaining} run(s), files ${index + 1}-${index + remaining} of ${total}.`);
+    notify("info", title, `Queueing ${remaining} run(s), ${noun} ${index + 1}-${index + remaining} of ${total}.`);
     await app.queuePrompt(0, remaining);
 }
 
 app.registerExtension({
     name: "promptgen.queueAllFiles",
     async beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData.name !== NODES.batchText) return;
+        const button = BUTTONS[nodeData.name];
+        if (!button) return;
         chain(nodeType, "onNodeCreated", function () {
-            const button = this.addWidget("button", TITLE, null, () => queueAllFiles(this));
-            button.serialize = false; // keeps the saved widget values unchanged
+            const widget = this.addWidget("button", button.title, null, () => queueAll(this, button));
+            widget.serialize = false; // keeps the saved widget values unchanged
         });
     },
 });

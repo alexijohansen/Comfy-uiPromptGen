@@ -1,4 +1,6 @@
-from promptgen.core.counting import take_number
+import pytest
+
+from promptgen.core.counting import batch_position, take_number
 
 
 def test_batch_with_unchanged_widget_counts_up():
@@ -19,3 +21,12 @@ def test_fixed_and_separate_nodes():
     assert [take_number("a", 3, False) for _ in range(2)] == [3, 3]
     take_number("b", 1, True)
     assert take_number("c", 1, True) == 1
+
+
+def test_batch_position():
+    assert batch_position(0, 3, "stop") == (0, 1)
+    assert batch_position(2, 3, "stop") == (2, 3)
+    assert batch_position(2, 3, "start over") == (2, 0)
+    assert batch_position(4, 3, "start over") == (1, 2)
+    with pytest.raises(RuntimeError, match="are done"):
+        batch_position(3, 3, "stop")

@@ -1,8 +1,11 @@
-"""Finding and reading the .txt files used by the Batch Text Loader."""
+"""Finding and reading the files used by the batch loaders (text and images)."""
 
 from __future__ import annotations
 
 import os
+
+TEXT_EXTENSIONS = (".txt",)
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff")
 
 
 def resolve_folder(folder: str, output_dir: str | None) -> str:
@@ -13,18 +16,27 @@ def resolve_folder(folder: str, output_dir: str | None) -> str:
     return os.path.abspath(folder)
 
 
-def list_text_files(folder: str) -> list[str]:
-    """Names of the .txt files directly in folder, sorted by name (case-insensitive)."""
+def list_files(folder: str, extensions: tuple[str, ...]) -> list[str]:
+    """Names of the files directly in folder with one of the extensions, sorted by name (case-insensitive)."""
     if not os.path.isdir(folder):
         raise FileNotFoundError(f"Folder not found: {folder}")
-    names = [f for f in os.listdir(folder) if f.lower().endswith(".txt") and os.path.isfile(os.path.join(folder, f))]
+    names = [f for f in os.listdir(folder)
+             if f.lower().endswith(extensions) and os.path.isfile(os.path.join(folder, f))]
     return sorted(names, key=str.lower)
 
 
-def folder_fingerprint(folder: str) -> str:
-    """Changes whenever a .txt file in folder is added, removed or edited."""
+def list_text_files(folder: str) -> list[str]:
+    return list_files(folder, TEXT_EXTENSIONS)
+
+
+def list_image_files(folder: str) -> list[str]:
+    return list_files(folder, IMAGE_EXTENSIONS)
+
+
+def folder_fingerprint(folder: str, extensions: tuple[str, ...] = TEXT_EXTENSIONS) -> str:
+    """Changes whenever a matching file in folder is added, removed or edited."""
     try:
-        files = list_text_files(folder)
+        files = list_files(folder, extensions)
         return str([(f, os.path.getmtime(os.path.join(folder, f))) for f in files])
     except OSError as e:
         return str(e)

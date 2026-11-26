@@ -1,6 +1,7 @@
 """Node registry. Node IDs must not change: saved workflows refer to them."""
 
-from .nodes.counter import PromptGenBatchText, PromptGenCounter
+from .nodes.batch import PromptGenBatchImage, PromptGenBatchText
+from .nodes.counter import PromptGenCounter
 from .nodes.ollama import PromptGenOllamaRewrite
 from .nodes.settings import PromptGenSaveSettings
 from .nodes.text import PromptGenLineList, PromptGenShowText, PromptGenTemplate
@@ -12,6 +13,7 @@ _NODES = {
     "PromptGenShowText": (PromptGenShowText, "PromptGen Show / Save Text"),
     "PromptGenCounter": (PromptGenCounter, "PromptGen Counter"),
     "PromptGenBatchText": (PromptGenBatchText, "PromptGen Batch Text Loader"),
+    "PromptGenBatchImage": (PromptGenBatchImage, "PromptGen Batch Image Loader"),
     "PromptGenSaveSettings": (PromptGenSaveSettings, "PromptGen Save Settings"),
 }
 

@@ -3,14 +3,15 @@
 import pytest
 
 from promptgen import NODE_CLASS_MAPPINGS, comfy
-from promptgen.nodes.counter import PromptGenBatchText, PromptGenCounter
+from promptgen.nodes.batch import PromptGenBatchImage, PromptGenBatchText
+from promptgen.nodes.counter import PromptGenCounter
 from promptgen.nodes.text import PromptGenShowText, PromptGenTemplate
 
 
 @pytest.fixture
 def out(tmp_path, monkeypatch):
     monkeypatch.setattr(comfy, "output_dir", lambda: str(tmp_path))
-    for module in ("promptgen.nodes.common", "promptgen.nodes.counter"):
+    for module in ("promptgen.nodes.common", "promptgen.nodes.batch"):
         monkeypatch.setattr(f"{module}.output_dir", lambda: str(tmp_path))
     return tmp_path
 
@@ -18,7 +19,7 @@ def out(tmp_path, monkeypatch):
 def test_all_nodes_registered_with_stable_ids():
     assert set(NODE_CLASS_MAPPINGS) == {
         "PromptGenLineList", "PromptGenTemplate", "PromptGenOllamaRewrite", "PromptGenShowText",
-        "PromptGenCounter", "PromptGenBatchText", "PromptGenSaveSettings",
+        "PromptGenCounter", "PromptGenBatchText", "PromptGenBatchImage", "PromptGenSaveSettings",
     }
 
 
@@ -86,3 +87,26 @@ def test_save_settings_prompts_are_text_boxes_and_empty_is_null(out):
     PromptGenSaveSettings().run("", None, "s", "a cat", "", prompt={})
     data = json.loads((out / "s.json").read_text(encoding="utf-8"))
     assert data["positive_prompt"] == "a cat" and data["negative_prompt"] is None
+
+
+def test_batch_image_loader_walks_folder(out, monkeypatch):
+    from PIL import Image
+
+    folder = out / "imgs"
+    folder.mkdir()
+    Image.new("RGB", (4, 2), (255, 0, 0)).save(folder / "a.png")
+    Image.new("RGBA", (3, 3), (0, 0, 0, 0)).save(folder / "b.png")
+    (folder / "notes.txt").write_text("not an image", encoding="utf-8")
+    # torch is not needed to test the stepping: return the numpy arrays instead
+    from promptgen.core.images import load_image_arrays
+    monkeypatch.setattr(PromptGenBatchImage, "load", lambda self, path: load_image_arrays(path))
+
+    node = PromptGenBatchImage()
+    first = node.run("imgs", 0, True, "stop", unique_id="5")
+    second = node.run("imgs", 0, True, "stop", unique_id="5")
+    (rgb, mask, name, index, total) = first["result"]
+    assert (name, index, total, rgb.shape, mask.max()) == ("a", 0, 2, (2, 4, 3), 0.0)
+    assert second["result"][2:] == ("b", 1, 2) and second["result"][1].min() == 1.0  # fully transparent
+    assert second["ui"]["next_number"] == [2]
+    with pytest.raises(RuntimeError, match="are done"):
+        node.run("imgs", 0, True, "stop", unique_id="5")

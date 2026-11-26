@@ -12,6 +12,7 @@ All nodes are in the **PromptGen** category of the node menu.
 | [PromptGen Show / Save Text](#promptgen-show--save-text) | Shows text on the node and can save it as a `.txt` file |
 | [PromptGen Counter](#promptgen-counter) | A number that goes up with every run, plus a padded name like `prompt_0001` |
 | [PromptGen Batch Text Loader](#promptgen-batch-text-loader) | Loads the next `.txt` file from a folder on every run |
+| [PromptGen Batch Image Loader](#promptgen-batch-image-loader) | Loads the next image from a folder on every run |
 | [PromptGen Save Settings](#promptgen-save-settings) | Saves the prompts, KSampler settings, seed, model, LoRAs and resolution as a `.json` file |
 
 ## Installation
@@ -172,6 +173,29 @@ Loads one `.txt` file from a folder on each run, so you can make one image per s
 
 Only `.txt` files directly in the folder are used, not files in subfolders.
 
+### PromptGen Batch Image Loader
+
+Works like the Batch Text Loader, but for images. Each run loads the next image from a folder, for example to upscale, caption or img2img a whole folder.
+
+| Input | Type | Description |
+|---|---|---|
+| `folder` | STRING | A full path such as `D:\renders`, or a folder inside ComfyUI's `output` folder such as `ArtemyFantasy/images`. Empty means the `output` folder itself. |
+| `index` | INT | Which image to load. `0` is the first image. Images are sorted by name. |
+| `auto_increment` | BOOLEAN | On (the default): `index` goes up by 1 on every run, so each run loads the next image. Off: the same image every run. |
+| `when_done` | list | What happens after the last image. **stop**: the run stops with a message saying all images are done. **start over**: it goes back to the first image. |
+
+| Output | Type | Description |
+|---|---|---|
+| `image` | IMAGE | The image, the same as Load Image gives (EXIF rotation applied). |
+| `mask` | MASK | From the image's transparency, 1 where it is transparent. All zeros for images without transparency. |
+| `name` | STRING | The file name without extension, for example `prompt_0001`. Useful as the `filename` for what you save. |
+| `index` | INT | The index of the image that was loaded. |
+| `total` | INT | How many images are in the folder. |
+
+**Queue all images button:** counts the images left in the folder, from `index` to the end, and queues exactly that many runs.
+
+Supported files: `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.gif` (first frame), `.tif` and `.tiff`, directly in the folder (not in subfolders).
+
 ### PromptGen Save Settings
 
 Saves the settings of a run as a `.json` file and shows them on the node. Connect the positive and negative prompt yourself. The sampler settings, models, LoRAs and resolution are read from the running workflow, so you don't need to wire those in.
@@ -292,13 +316,15 @@ comfyui-promptgen/
     core/                  plain Python, no ComfyUI imports, fully tested
       templating.py        {1}, {2} ... filling
       filenames.py         name cleaning, prefix + filename, safe saving
-      counting.py          shared auto-increment (in memory only)
-      textfiles.py         finding and reading .txt files
+      counting.py          shared auto-increment and batch stepping (in memory only)
+      textfiles.py         finding files for the batch loaders, reading .txt files
+      images.py            reading an image file into image + mask arrays
       settings.py          collects prompts, samplers, models, LoRAs and resolution for the JSON
       ollama_client.py     Ollama HTTP client
     nodes/                 thin ComfyUI node classes
       text.py              Line List, Template, Show / Save Text
-      counter.py           Counter, Batch Text Loader
+      counter.py           Counter
+      batch.py             Batch Text Loader, Batch Image Loader (shared base class)
       settings.py          Save Settings
       ollama.py            Ollama Rewrite
       common.py            shared node pieces

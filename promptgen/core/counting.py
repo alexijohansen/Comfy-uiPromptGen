@@ -26,3 +26,17 @@ def take_number(key: Hashable, widget_value: int, auto_increment: bool) -> int:
 def reset_all() -> None:
     """Forget all counters (used by tests)."""
     _state.clear()
+
+
+def batch_position(index: int, total: int, when_done: str) -> tuple[int, int]:
+    """For a batch loader: (position of the file to load, index to show next).
+
+    when_done 'stop' raises once index passes the last file; 'start over' wraps around.
+    """
+    if total <= 0:
+        raise ValueError("No files to load.")
+    if index >= total and when_done != "start over":
+        raise RuntimeError(f"All {total} files are done (index {index}). Set index back to 0 to start again.")
+    position = index % total
+    next_index = (position + 1) % total if when_done == "start over" else position + 1
+    return position, next_index

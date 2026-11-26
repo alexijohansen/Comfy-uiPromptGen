@@ -8,6 +8,7 @@ export const NODES = {
     showText: "PromptGenShowText",
     counter: "PromptGenCounter",
     batchText: "PromptGenBatchText",
+    batchImage: "PromptGenBatchImage",
     saveSettings: "PromptGenSaveSettings",
 };
 
