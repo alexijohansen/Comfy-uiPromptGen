@@ -405,6 +405,29 @@ More about the models in [ComfyUI's Depth Anything 3 tutorial](https://docs.comf
 
 On **Run Depth Anything 3**, leave `mode` on **mono**. `resolution` (default 504) is the size the model works at. Higher gives more detail in the depth but is slower. If you change it, set the same value as `da3_resolution` in the VR180 advanced settings. Depth Anything 3 looks at each frame on its own, so the depth can flicker a little. If it bothers you, raise `temporal_smoothing` in the VR180 advanced settings a bit (0.3-0.6), or use a Video Depth Anything custom node (search for it in ComfyUI Manager), which is made for video, with `depth_format` set to `disparity map, near = white`.
 
+### Field of view (hfov_deg) and size
+
+`hfov_deg` is an angle in degrees, not a focal length in mm. It's how wide the original camera saw from left to right. In the headset the video is spread over that many degrees of the 180° dome, so it decides how big everything looks. The default of 65° is about a 28 mm lens on full frame (or the main camera of most phones). For a 16:9 video that's about 65° wide and 40° high.
+
+Match the real lens as well as you can, otherwise the size looks wrong: with too large a value people look like giants, with too small a value like dolls, and the 3D depth no longer fits the size. A smaller value gives a smaller window that looks farther away. A telephoto shot (35°, about 58 mm) really does cover only a small part of your view.
+
+| Lens (full frame, or 35 mm equivalent) | `hfov_deg` |
+|---|---|
+| 14 mm | 104° |
+| 18 mm | 90° |
+| 24 mm | 74° |
+| 28 mm | 65° |
+| 35 mm | 54° |
+| 50 mm | 40° |
+| 58 mm | 35° |
+| 85 mm | 24° |
+
+If you know the lens in mm, you can also leave `hfov_deg` alone and set `focal_length_mm` and `sensor` on the [VR180 Advanced Settings](#promptgen-vr180-advanced-settings) node. For phones, use the 35 mm equivalent focal length (often listed as "26 mm" or similar) with the full frame sensor. Zoomed shots have a longer focal length than the camera's main lens.
+
+**Checking the size:** find a shot with a person or a door at a known distance, and change `hfov_deg` until it looks life-size in the headset. `fov_scale` in the advanced settings is a fudge factor on top (1.1 = 10% bigger).
+
+**Strength and IPD:** `ipd_mm` (advanced settings, default 64) is the full distance between your eyes; each eye is moved by half of it. To make the 3D weaker or stronger, change `strength` on the main node instead (0.5 = half, 2 = double), and leave the IPD at your real eye distance.
+
 ### Steps
 
 Load the example workflow [`workflows/mono_to_vr180_sbs.json`](workflows/mono_to_vr180_sbs.json) (drag it onto ComfyUI), or build it:
@@ -424,7 +447,7 @@ Batch Video Loader ── frames ──► Run Depth Anything 3 ◄── Load D
 ```
 
 1. Set the loader's `folder` to your folder of mono videos and `index` to 0.
-2. On **Depth to VR180 Stereo**, set `hfov_deg` to your camera's field of view (or set `focal_length_mm` and `sensor` on the advanced settings). If you don't know it, 65° is a good start for phone and action-camera-like footage. Leave `depth_format` on `DA3 Metric-Large raw` when you use the Metric-Large model.
+2. On **Depth to VR180 Stereo**, set `hfov_deg` to your camera's field of view, see [Field of view](#field-of-view-hfov_deg-and-size). If you don't know it, 65° is a good start for phone and action-camera-like footage. Leave `depth_format` on `DA3 Metric-Large raw` when you use the Metric-Large model.
 3. Pick an output `resolution`. A 1280 pixel tall 16:9 video at 65° has about 31 pixels per degree, more than even the 7680x3840 preset (21), which the info text on the node shows, so a big preset such as `5760x2880` or `7680x3840` is worth it: each eye is rendered fresh, so more output pixels means sharper eyes, not upscaling blur.
 4. For a quick test, set the loader's `max_frames` to about 30 and queue once. Look at the **preview** (left eye on the left) and the info text on the stereo node. Watch the test clip in your headset.
 5. Adjust if needed: things look too big or too small, change `fov_scale`. The 3D is too strong or too weak, change `strength`. For artifacts, see [Finding artifacts](#finding-artifacts).
