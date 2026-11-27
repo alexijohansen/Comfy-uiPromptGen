@@ -8,7 +8,7 @@ const join = (value) => (Array.isArray(value) ? value.join("\n") : String(value 
 app.registerExtension({
     name: "promptgen.showText",
     async beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData.name === NODES.stereo) {
+        if ([NODES.stereo, NODES.stereoOld].includes(nodeData.name)) {
             chain(nodeType, "onExecuted", function (message) {
                 readOnlyBox(this, "info_text", { maxLines: 4 }).value = join(message?.text);
                 redraw(this);

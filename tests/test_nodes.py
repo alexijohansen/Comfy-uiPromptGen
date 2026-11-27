@@ -20,7 +20,7 @@ def test_all_nodes_registered_with_stable_ids():
     assert set(NODE_CLASS_MAPPINGS) == {
         "PromptGenLineList", "PromptGenTemplate", "PromptGenOllamaRewrite", "PromptGenShowText",
         "PromptGenCounter", "PromptGenBatchText", "PromptGenBatchImage", "PromptGenSaveSettings",
-        "PromptGenBatchVideo", "PromptGenVR180Stereo", "PromptGenSaveVR180", "PromptGenSaveVideoHQ",
+        "PromptGenBatchVideo", "PromptGenVR180Stereo", "PromptGenVR180", "PromptGenVR180Settings", "PromptGenSaveVR180", "PromptGenSaveVideoHQ",
     }
 
 

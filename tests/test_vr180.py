@@ -132,3 +132,19 @@ def test_debug_views_render():
     for view in vr180.DEBUG_VIEWS:
         out = vr180.render_debug(frames, inv, s, view)
         assert out.shape == (1, 64, 64, 3) and torch.isfinite(out).all(), view
+
+
+def test_straight_edges_do_not_follow_depth():
+    frames = torch.ones(1, 60, 80, 3)
+    inv = torch.full((1, 60, 80), 1 / 5.0)
+    inv[:, :30] = 1 / 0.4  # top half very near: without the fixed frame its edge would move
+    s = vr180.StereoSettings(hfov_deg=60, eye_size=256, depth_blur_px=0)
+    left = vr180.render_eyes(frames, inv, s)[0][0, :, :, 0]
+
+    def left_edge(row):
+        return int((left[row] > 0.5).nonzero()[0])
+
+    assert left_edge(100) == left_edge(156)  # same column above and below the depth change
+    s.straight_edges = False
+    left = vr180.render_eyes(frames, inv, s)[0][0, :, :, 0]
+    assert left_edge(100) != left_edge(156)

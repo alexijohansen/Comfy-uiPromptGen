@@ -26,10 +26,17 @@ class BatchFolderNode(AutoIncrementNode):
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "folder": ("STRING", {"default": cls.DEFAULT_FOLDER}),
-                "index": ("INT", {"default": 0, "min": 0, "max": 0x7FFFFFFF}),
-                "auto_increment": auto_increment_input(),
-                "when_done": (WHEN_DONE, {"default": "stop"}),
+                "folder": ("STRING", {"default": cls.DEFAULT_FOLDER,
+                                      "tooltip": "A full path like D:\\videos, or a folder inside ComfyUI's output "
+                                                 "folder. Empty = the output folder itself."}),
+                "index": ("INT", {"default": 0, "min": 0, "max": 0x7FFFFFFF,
+                                  "tooltip": "Which file to load: 0 is the first (sorted by name)."}),
+                "auto_increment": (auto_increment_input()[0],
+                                   {**auto_increment_input()[1],
+                                    "tooltip": "On: every run loads the next file. Off: the same file every run."}),
+                "when_done": (WHEN_DONE, {"default": "stop",
+                                          "tooltip": "After the last file: stop with a message, or start over at "
+                                                     "the first file."}),
             },
             "hidden": cls.HIDDEN,
         }

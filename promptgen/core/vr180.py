@@ -70,6 +70,9 @@ class StereoSettings:
     depth_dilate_px: float = 0.0    # max filter radius on inverse depth (grows near objects)
     eye_size: int = 2880
     method: str = "ray march (recommended)"
+    straight_edges: bool = True     # cut each eye with a fixed frame instead of letting edges follow depth
+    window_m: float = 0.0           # distance of that frame (0 = infinitely far)
+    edge_feather_px: float = 1.0    # soft edge width in source pixels
     max_steps: int = 128            # ray march steps cap
 
     def source_hfov_deg(self) -> float:
@@ -298,6 +301,21 @@ def render_sbs(frames: torch.Tensor, inv_depth: torch.Tensor, settings: StereoSe
     return torch.cat([left, right], dim=2)
 
 
+def frame_mask(frames_shape, settings: "StereoSettings", eye_x: float, device) -> torch.Tensor:
+    """(eye, eye) 0..1: where the source frame is, for one eye, as if the whole frame were a flat
+    window at settings.window_m (0 = infinitely far). Its edges are straight, whatever the depth."""
+    H, W = frames_shape[1], frames_shape[2]
+    n = settings.eye_size
+    f = focal_px(W, settings.shown_hfov_deg())
+    xn, yn, valid = _eye_rays(n, device)
+    inv_window = 1.0 / settings.window_m if settings.window_m > 0 else 0.0
+    u = W / 2 + f * xn + f * eye_x * inv_window
+    v = H / 2 + f * yn
+    feather = max(settings.edge_feather_px, 0.5)  # at least a half pixel, so the edge is anti-aliased
+    dist = torch.minimum(torch.minimum(u, W - u), torch.minimum(v, H - v))  # source px to the nearest edge
+    return ((dist / feather).clamp(0, 1) * valid).float()
+
+
 def render_eyes(frames, inv_depth, settings, ipd_mm=None):
     """(left, right), each (B, eye, eye, 3)."""
     ipd = settings.ipd_mm if ipd_mm is None else ipd_mm
@@ -307,7 +325,13 @@ def render_eyes(frames, inv_depth, settings, ipd_mm=None):
     eyes = []
     for eye_x in (-ipd / 2000.0, ipd / 2000.0):  # left, right (metres)
         u, gy = eye_coordinates(frames.shape, inv, settings, eye_x, frames.device)
-        eyes.append(_sample(img, u, gy, W, "zeros").permute(0, 2, 3, 1).clamp(0, 1))
+        if settings.straight_edges:
+            # sample with the edge pixels repeated, then cut out a frame with straight edges
+            eye = _sample(img, u, gy.clamp(-1, 1), W, "border")
+            eye = eye * frame_mask(frames.shape, settings, eye_x, frames.device)
+        else:  # the frame's edges move with the depth
+            eye = _sample(img, u, gy, W, "zeros")
+        eyes.append(eye.permute(0, 2, 3, 1).clamp(0, 1))
     return eyes[0], eyes[1]
 
 

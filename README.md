@@ -16,6 +16,7 @@ All nodes are in the **PromptGen** category of the node menu, the video nodes in
 | [PromptGen Save Settings](#promptgen-save-settings) | Saves the prompts, KSampler settings, seed, model, LoRAs and resolution as a `.json` file |
 | [PromptGen Batch Video Loader](#promptgen-batch-video-loader) | Loads the next video (frames, fps, audio) from a folder on every run |
 | [PromptGen Depth to VR180 Stereo](#promptgen-depth-to-vr180-stereo) | Turns a mono video plus depth into 180° side-by-side stereo |
+| [PromptGen VR180 Advanced Settings](#promptgen-vr180-advanced-settings) | Optional: the stereo settings you rarely need |
 | [PromptGen Save VR180 Video](#promptgen-save-vr180-video) | Renders and saves the stereo video as `<name>_180_LR.mp4` with audio and VR180 metadata |
 | [PromptGen Save Video (High Quality)](#promptgen-save-video-high-quality) | Save Video with H.264/H.265 quality settings, 10-bit, and high quality or lossless audio |
 
@@ -273,40 +274,27 @@ Supported files: `.mp4`, `.mov`, `.mkv`, `.webm`, `.avi` and `.m4v`, directly in
 
 ### PromptGen Depth to VR180 Stereo
 
-Turns a mono video plus a depth map into 180° side-by-side stereo, left eye on the left (VR180 LR). Connect its `stereo` output to **Save VR180 Video**.
+Turns a mono video plus a depth map into 180° side-by-side stereo, left eye on the left (VR180 LR). Connect its `stereo` output to **Save VR180 Video**. Hover over any setting in ComfyUI to see what it does.
 
-How it works: the source is treated as a normal (pinhole) camera with the field of view you set, and is placed on a 180° x 180° dome for each eye, so things keep their real size in the headset. Everything outside the source frame is black. For every pixel of each eye, the node walks along that eye's line of sight, from near to far, and stops at the first point where the depth map says there's a surface (the shift for a point is about IPD/2 divided by its distance). It then reads the colour from the source at that spot. Because every output pixel reads from the source, there are never holes to fill. At the edges of near objects the background stretches a little instead. Nothing is generated or inpainted.
+How it works: the source is treated as a normal (pinhole) camera with the field of view you set, and is placed on a 180° x 180° dome for each eye, like a window you look through, so things keep their real size in the headset. Everything outside the frame is black, and the frame keeps straight edges. For every pixel of each eye, the node walks along that eye's line of sight, from near to far, and stops at the first point where the depth map says there's a surface (the shift for a point is about IPD/2 divided by its distance). It then reads the colour from the source at that spot. Because every output pixel reads from the source, there are never holes to fill. At the edges of near objects the background stretches a little instead. Nothing is generated or inpainted.
 
 The node only prepares the clip and renders one preview frame. The Save node renders the frames a few at a time on the GPU and streams them straight into the video file, because a full 7680x3840 frame takes 350 MB as an image and a whole clip would not fit in memory.
 
+The node only shows the settings you're likely to change. Everything else is on the optional [VR180 Advanced Settings](#promptgen-vr180-advanced-settings) node.
+
 | Input | Type | Description |
 |---|---|---|
+| `depth_format` | list | What kind of depth you connect. See the table below. Default `DA3 Metric-Large raw`. |
+| `resolution` | list | Side-by-side output size, from `2880x1440` up to `8192x4096`. Each eye is square. **match source sharpness** picks the size that keeps the source's pixels per degree (capped at 4096 per eye). **custom** uses `custom_eye_size` from the advanced settings. Default `5760x2880`. |
+| `hfov_deg` | FLOAT | How wide the original camera saw (horizontal field of view). Sets how big things look in the headset. Default 65°, about a 28 mm lens on full frame. Phones' main cameras are about 65-75°. |
+| `strength` | FLOAT | How strong the 3D effect is. 1 is real life, 0 is flat, 2 is twice as strong. Default 1. |
+| `window_distance_m` | FLOAT | How far away the picture's frame appears. 0 (the default) is infinitely far, so the frame sits behind everything. Try 2 if things cut off by the edge feel odd. |
+| `debug_view` | list | What the `debug` output shows, see [Finding artifacts](#finding-artifacts). |
+| `preview_frame` | INT | Which frame the `preview` and `debug` outputs show. |
 | `images` (optional) | IMAGE | The source frames, for example from the Batch Video Loader. If not connected, the frames stored in `da3_geometry` are used. |
 | `da3_geometry` (optional) | DA3_GEOMETRY | From ComfyUI's **Run Depth Anything 3** node. The best option: the node uses the raw depth and also the sky mask (sky is set to infinitely far). |
 | `depth` (optional) | IMAGE | A depth image instead, for example from **Render Depth Anything 3**, Depth Anything V2 or Video Depth Anything. Its size may differ from the frames. |
-| `depth_format` | list | What the depth values mean. See the table below. Default `DA3 Metric-Large raw`. |
-| `resolution` | list | Side-by-side output size, from `2880x1440` up to `8192x4096`. Each eye is square. **match source sharpness** picks the size that keeps the source's pixels per degree (capped at 4096 per eye). **custom** uses `custom_eye_size`. Default `5760x2880`. |
-| `custom_eye_size` | INT | Per eye size for **custom**. Rounded to a multiple of 16. |
-| `hfov_deg` | FLOAT | Horizontal field of view of the camera that filmed the source. Default 65°, about a 28 mm lens on full frame. Phones' main cameras are about 65-75°. |
-| `focal_length_mm` | FLOAT | If above 0, used together with `sensor` instead of `hfov_deg`. Use the 35 mm equivalent focal length with the full frame sensor if that's what you know. |
-| `sensor` | list | Sensor width for `focal_length_mm`. |
-| `fov_scale` | FLOAT | Fudge factor for the size on the dome: above 1 shows the picture bigger (wider), below 1 smaller. Default 1. |
-| `ipd_mm` | FLOAT | Distance between the eyes. Default 64 mm. More gives a stronger 3D effect (the world looks smaller). |
-| `depth_scale` | FLOAT | Multiplies all depths. Above 1 pushes everything away (less 3D), below 1 brings it closer. Default 1. |
-| `min_depth_m` | FLOAT | Nothing is treated as closer than this. Limits the biggest shift. Default 0.3 m. |
-| `near_m`, `far_m` | FLOAT | Only for the two `near = white` formats. Those images have no units (every frame is stretched to black..white), so you say what distance white and black stand for. The metric formats take near and far from the depth data itself. Defaults 0.5 m and 30 m. |
-| `reference_depth_m` | FLOAT | Only for `relative depth`: the clip's median depth is set to this. Default 3 m. |
-| `da3_resolution` | INT | Only for `DA3 Metric-Large raw`: the `resolution` set on Run Depth Anything 3 (default 504). Needed to turn the raw values into metres. |
-| `iterations` | INT | Only for method **fixed point**: depth lookups per pixel. Default 3. |
-| `depth_blur_px` | FLOAT | Softens the depth map (in source pixels) before use. A little blur gives smoother edges. Default 2. |
-| `temporal_smoothing` | FLOAT | Averages the depth over frames to reduce flicker. 0 (off) to 0.95. Default 0. |
-| `chunk_size` | INT | Frames rendered at once on the GPU. Each 2880 px eye pair needs roughly 1 GB of VRAM. Lower it if you run out. Default 2. |
-| `preview_frame` | INT | Which frame to show on the `preview` and `debug` outputs. |
-| `method` | list | How each eye finds the depth to use. **ray march** (the default) steps along the eye's ray and takes the nearest surface it hits, so edges stay clean. **fixed point** is the original 3-lookup method: faster, but it can flip between the foreground and background depth next to depth edges, which shows as echoes or contour lines beside outlines. |
-| `depth_dilate_px` | FLOAT | Grows near objects in the depth map by this many source pixels. Depth models often put the edge of hair or an outline on the background's depth, so those pixels stay behind as a halo. 2-4 usually fixes that. Default 0. |
-| `strength` | FLOAT | Multiplies the 3D effect (the shift between the eyes). 0 is flat, 1 is real scale. The same as scaling `ipd_mm`. Default 1. |
-| `near_outlier_percent` | FLOAT | Ignores the nearest this-many percent of the clip's depth when limiting how near things can be, so a few bad depth pixels can't cause big shifts. One limit for the whole clip, so it doesn't change from frame to frame. Default 0.5. |
-| `debug_view` | list | What the `debug` output shows, see [Finding artifacts](#finding-artifacts). |
+| `advanced` (optional) | VR180_SETTINGS | A VR180 Advanced Settings node. Without it, its defaults are used. |
 
 | Output | Type | Description |
 |---|---|---|
@@ -322,6 +310,33 @@ The node only prepares the clip and renders one preview frame. The Save node ren
 | `relative depth (far = bigger)` | `da3_geometry` from DA3 Small, Base or Mono-Large | scaled so the clip's median depth is `reference_depth_m` |
 | `depth map, near = white` | Render Depth Anything 3 with `v2_style` or `min_max` | white = `near_m`, black = `far_m`, linear in between |
 | `disparity map, near = white` | Depth Anything V2 (relative), Video Depth Anything (relative), MiDaS-style maps | white = `near_m`, black = `far_m`, linear in 1/distance |
+
+### PromptGen VR180 Advanced Settings
+
+The settings of Depth to VR180 Stereo you'll rarely change. Add it only when you need one of them, and connect its `advanced` output to the stereo node's `advanced` input. The defaults are what the stereo node uses without it.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `ipd_mm` | 64 | Distance between the eyes. `strength` multiplies it. |
+| `depth_scale` | 1 | Multiplies every distance. Above 1 pushes the scene away (less 3D). Usually `strength` is all you need. |
+| `focal_length_mm`, `sensor` | 0, full frame | If the focal length is above 0, it's used with the sensor size instead of `hfov_deg`. For phones, use the 35 mm equivalent focal length with the full frame sensor. |
+| `fov_scale` | 1 | Fudge factor for how big the picture looks: 1.1 is 10% bigger. |
+| `custom_eye_size` | 2880 | Per eye size when `resolution` is **custom**. |
+| `min_depth_m` | 0.3 | Nothing is treated as nearer than this, which limits the biggest shift. |
+| `near_outlier_percent` | 0.5 | Ignores the nearest this-many percent of the clip's depth when limiting the shift, so a few bad depth pixels can't cause big jumps. One limit for the whole clip. 0 is off. |
+| `near_m`, `far_m` | 0.5, 30 | Only for the grey `near = white` depth images, which have no units: the distances white and black stand for. Metric depth brings its own near and far. |
+| `reference_depth_m` | 3 | Only for `relative depth`: the clip's typical (median) distance. |
+| `da3_resolution` | 504 | Only for `DA3 Metric-Large raw`: must be the same as `resolution` on Run Depth Anything 3, or the distances come out wrong. |
+| `depth_blur_px` | 2 | Softens the depth map, in source pixels. |
+| `depth_dilate_px` | 0 | Grows near objects in the depth map. Try 2-4 if hair or outlines leave a halo on the background. |
+| `temporal_smoothing` | 0 | Averages the depth over frames to reduce flicker (0.3-0.6 is noticeable). |
+| `straight_edges` | on | Keeps the picture's edges straight. Off: they dent and bulge with the depth. |
+| `edge_feather_px` | 1 | Softens the picture's edge. |
+| `method` | ray march | **ray march** takes the nearest surface along each eye's line of sight and keeps edges clean. **fixed point** is the older, faster method that can leave echoes next to outlines. |
+| `iterations` | 3 | Only for **fixed point**: depth lookups per pixel. |
+| `chunk_size` | 2 | Frames rendered at once on the GPU when saving. Each 2880 px eye pair needs roughly 1 GB of VRAM. Lower it if you run out. |
+
+**Old workflows:** the first version of the stereo node, with every setting on the node, is still there as *Depth to VR180 Stereo (old, all settings)*, so workflows saved with it load and work the same. It's hidden from the node search. For new workflows, use the new node.
 
 ### PromptGen Save VR180 Video
 
@@ -388,7 +403,7 @@ Recent versions of ComfyUI have Depth Anything 3 nodes built in (**Load Depth An
 
 More about the models in [ComfyUI's Depth Anything 3 tutorial](https://docs.comfy.org/tutorials/utility/depth-anything-3) and the [Depth Anything 3 project](https://github.com/ByteDance-Seed/Depth-Anything-3).
 
-On **Run Depth Anything 3**, leave `mode` on **mono**. `resolution` (default 504) is the size the model works at. Higher gives more detail in the depth but is slower. If you change it, set the same value as `da3_resolution` on the stereo node. Depth Anything 3 looks at each frame on its own, so the depth can flicker a little. If it bothers you, raise `temporal_smoothing` on the stereo node a bit (0.3-0.6), or use a Video Depth Anything custom node (search for it in ComfyUI Manager), which is made for video, with `depth_format` set to `disparity map, near = white`.
+On **Run Depth Anything 3**, leave `mode` on **mono**. `resolution` (default 504) is the size the model works at. Higher gives more detail in the depth but is slower. If you change it, set the same value as `da3_resolution` in the VR180 advanced settings. Depth Anything 3 looks at each frame on its own, so the depth can flicker a little. If it bothers you, raise `temporal_smoothing` in the VR180 advanced settings a bit (0.3-0.6), or use a Video Depth Anything custom node (search for it in ComfyUI Manager), which is made for video, with `depth_format` set to `disparity map, near = white`.
 
 ### Steps
 
@@ -409,7 +424,7 @@ Batch Video Loader ── frames ──► Run Depth Anything 3 ◄── Load D
 ```
 
 1. Set the loader's `folder` to your folder of mono videos and `index` to 0.
-2. On **Depth to VR180 Stereo**, set `hfov_deg` to your camera's field of view (or set `focal_length_mm` and `sensor`). If you don't know it, 65° is a good start for phone and action-camera-like footage. Leave `depth_format` on `DA3 Metric-Large raw` when you use the Metric-Large model.
+2. On **Depth to VR180 Stereo**, set `hfov_deg` to your camera's field of view (or set `focal_length_mm` and `sensor` on the advanced settings). If you don't know it, 65° is a good start for phone and action-camera-like footage. Leave `depth_format` on `DA3 Metric-Large raw` when you use the Metric-Large model.
 3. Pick an output `resolution`. A 1280 pixel tall 16:9 video at 65° has about 31 pixels per degree, more than even the 7680x3840 preset (21), which the info text on the node shows, so a big preset such as `5760x2880` or `7680x3840` is worth it: each eye is rendered fresh, so more output pixels means sharper eyes, not upscaling blur.
 4. For a quick test, set the loader's `max_frames` to about 30 and queue once. Look at the **preview** (left eye on the left) and the info text on the stereo node. Watch the test clip in your headset.
 5. Adjust if needed: things look too big or too small, change `fov_scale`. The 3D is too strong or too weak, change `strength`. For artifacts, see [Finding artifacts](#finding-artifacts).
@@ -426,15 +441,16 @@ Set the loader's `max_frames` to a few frames, pick a `preview_frame` that shows
 | `left eye`, `right eye` | One eye at full size. Easier to zoom into than the side-by-side preview. |
 | `no stereo (projection only)` | Both eyes with no shift. If something looks wrong here, it's the field of view (`hfov_deg`, `fov_scale`), not the depth. |
 | `depth (near = white)` | The depth as the node uses it, after scaling, sky removal, dilation and blur. Check that it's smooth, that the edges sit on the edges of things in the picture, and that the sky is black. Noise or holes here show up as wobble in the result. |
-| `shift map` | How far each pixel is shifted: blue is none, red the most. One very red spot means a few depth pixels are much too near: raise `near_outlier_percent` or `min_depth_m`. |
+| `shift map` | How far each pixel is shifted: blue is none, red the most. One very red spot means a few depth pixels are much too near: raise `near_outlier_percent` or `min_depth_m` in the advanced settings. |
 | `left minus right` | Where the eyes differ. Should look like outlines around near objects, fading out with distance. Repeated outlines next to each other are echoes: use method **ray march**. |
 
-Common fixes:
-- **Echoes or contour lines next to outlines:** use method **ray march** (the default since this update).
-- **A halo of the foreground (hair, edges) left on the background:** raise `depth_dilate_px` to 2-4. If the depth edges are blurry in the `depth` view, also raise the `resolution` on Run Depth Anything 3 (for example 1008) and set the same `da3_resolution`.
-- **Background smeared sideways next to near objects:** that's the stretching this method uses instead of hole filling. Lower `strength` or raise `depth_scale` to make it narrower.
+Common fixes (settings marked * are on the VR180 Advanced Settings node):
+- **Echoes or contour lines next to outlines:** use method* **ray march** (the default).
+- **A halo of the foreground (hair, edges) left on the background:** raise `depth_dilate_px`* to 2-4. If the depth edges are blurry in the `depth` view, also raise the `resolution` on Run Depth Anything 3 (for example 1008) and set the same `da3_resolution`*.
+- **Background smeared sideways next to near objects:** that's the stretching this method uses instead of hole filling. Lower `strength` to make it narrower.
 - **Everything feels too strong or too weak:** change `strength`. Check the nearest and median depth in the info text: if they don't look like real distances, the depth format or `da3_resolution` is wrong.
-- **Wobble or flicker between frames:** raise `temporal_smoothing`, or use a video depth model.
+- **The edges of the picture dent or bulge:** turn `straight_edges`* on (the default).
+- **Wobble or flicker between frames:** raise `temporal_smoothing`*, or use a video depth model.
 
 ---
 
@@ -494,7 +510,7 @@ Replace the loader with whatever makes your frames (for example a video model an
 - **The rewrite contains the model's reasoning:** leave `thinking` off.
 - **Run Depth Anything 3 is missing or the model list is empty:** update ComfyUI, put the model in `models/geometry_estimation/` and press **R**. See [Set up Depth Anything 3](#set-up-depth-anything-3).
 - **ComfyUI runs out of RAM on a long video:** set `max_frames` on the Batch Video Loader (see Memory under [Batch Video Loader](#promptgen-batch-video-loader)).
-- **CUDA out of memory while saving a VR180 video:** lower `chunk_size` on the stereo node to 1, or pick a smaller resolution.
+- **CUDA out of memory while saving a VR180 video:** lower `chunk_size` in the VR180 advanced settings to 1, or pick a smaller resolution.
 - **"Could not start the encoder":** the NVIDIA encoders need an NVIDIA card with current drivers, and `h264_nvenc` can't go above 4096 px wide. Pick `h265 (libx265)` instead. For the audio, PCM only works in mkv or mov.
 - **The headset shows the video flat or as two pictures:** check the file name ends in `_180_LR` (keep `add_180_LR_suffix` on), or choose "180° SBS" in the player.
 - **The 3D looks too strong, too weak, or the wrong size:** see step 5 of [Making VR180 videos](#steps).
@@ -526,7 +542,8 @@ comfyui-promptgen/
       batch.py             Batch Text Loader, Batch Image Loader (shared base class)
       settings.py          Save Settings
       ollama.py            Ollama Rewrite
-      video.py             Batch Video Loader, Depth to VR180 Stereo, Save VR180 Video, Save Video (HQ)
+      video.py             Batch Video Loader, Depth to VR180 Stereo (+ advanced settings, old version),
+                           Save VR180 Video, Save Video (HQ)
       common.py            shared node pieces
   js/                      frontend scripts (common.js holds shared helpers)
   workflows/               example workflows

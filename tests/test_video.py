@@ -135,19 +135,23 @@ def test_save_video_hq(out):
     assert v.audio.shape[1] == pytest.approx(SR * 10 / 24, abs=SR * 0.05)  # cut to the video's length
 
 
-def test_stereo_then_save_vr180(out):
-    from promptgen.nodes.video import PromptGenSaveVR180, PromptGenVR180Stereo, encoder_inputs
+def _defaults(cls):
+    return {k: v[1]["default"] for k, v in cls.INPUT_TYPES()["required"].items()}
 
-    stereo_inputs = PromptGenVR180Stereo.INPUT_TYPES()["required"]
-    kw = {k: v[1]["default"] for k, v in stereo_inputs.items()}
-    kw.update(resolution="custom", custom_eye_size=128, depth_format="metric depth (meters)")
+
+def test_stereo_then_save_vr180(out):
+    from promptgen.nodes.video import PromptGenSaveVR180, PromptGenVR180, PromptGenVR180Settings, encoder_inputs
+
+    kw = _defaults(PromptGenVR180)
+    kw.update(resolution="custom", depth_format="metric depth (meters)")
+    (advanced,) = PromptGenVR180Settings().run(**{**_defaults(PromptGenVR180Settings), "custom_eye_size": 128})
     frames = torch.rand(3, 36, 64, 3)
     geometry = {"depth": torch.full((3, 36, 64), 2.0), "image": frames, "mode": "mono",
                 "sky": torch.zeros(3, 36, 64)}
-    result = PromptGenVR180Stereo().run(**kw, da3_geometry=geometry)
+    result = PromptGenVR180().run(**kw, da3_geometry=geometry, advanced=advanced)
     clip, preview, info, debug = result["result"]
-    assert debug.shape == (1, 128, 128, 3)  # anaglyph of one eye
     assert preview.shape == (1, 128, 256, 3) and "SBS 256x128" in info and result["ui"]["text"] == [info]
+    assert debug.shape == (1, 128, 128, 3)  # anaglyph of one eye
 
     widgets = {k: v[1]["default"] for k, v in encoder_inputs(codec="h265 (libx265)").items()}
     widgets["preset"] = "ultrafast"
@@ -158,9 +162,35 @@ def test_stereo_then_save_vr180(out):
     assert len(v.frames) == 3 and v.frames[0].shape == (128, 256, 3) and v.audio is not None
 
 
-def test_stereo_needs_depth():
-    from promptgen.nodes.video import PromptGenVR180Stereo
+def test_old_stereo_node_keeps_its_inputs_and_matches_new_one():
+    from promptgen.nodes.video import PromptGenVR180, PromptGenVR180Stereo
 
-    kw = {k: v[1]["default"] for k, v in PromptGenVR180Stereo.INPUT_TYPES()["required"].items()}
+    required = PromptGenVR180Stereo.INPUT_TYPES()["required"]
+    assert list(required) == PromptGenVR180Stereo._ORDER and PromptGenVR180Stereo.DEPRECATED
+    frames = torch.rand(1, 24, 32, 3)
+    depth = torch.rand(1, 24, 32, 3)
+    old = _defaults(PromptGenVR180Stereo)
+    old.update(resolution="custom", custom_eye_size=64, depth_format="disparity map, near = white")
+    new = _defaults(PromptGenVR180)
+    new.update(resolution="custom", depth_format="disparity map, near = white")
+    a = PromptGenVR180Stereo().run(**old, images=frames, depth=depth)["result"][1]
+    b = PromptGenVR180().run(**new, images=frames, depth=depth, advanced={"custom_eye_size": 64})["result"][1]
+    assert torch.allclose(a, b)
+
+
+def test_every_video_node_input_has_a_tooltip():
+    from promptgen import NODE_CLASS_MAPPINGS
+
+    for node_id in ("PromptGenBatchVideo", "PromptGenVR180", "PromptGenVR180Settings", "PromptGenVR180Stereo",
+                    "PromptGenSaveVR180", "PromptGenSaveVideoHQ"):
+        types = NODE_CLASS_MAPPINGS[node_id].INPUT_TYPES()
+        for group in ("required", "optional"):
+            for name, spec in types.get(group, {}).items():
+                assert len(spec) > 1 and spec[1].get("tooltip"), f"{node_id}.{name}"
+
+
+def test_stereo_needs_depth():
+    from promptgen.nodes.video import PromptGenVR180
+
     with pytest.raises(ValueError, match="depth"):
-        PromptGenVR180Stereo().run(**kw, images=torch.rand(1, 8, 8, 3))
+        PromptGenVR180().run(**_defaults(PromptGenVR180), images=torch.rand(1, 8, 8, 3))

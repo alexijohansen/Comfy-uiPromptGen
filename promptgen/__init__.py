@@ -4,7 +4,8 @@ from .nodes.batch import PromptGenBatchImage, PromptGenBatchText
 from .nodes.counter import PromptGenCounter
 from .nodes.ollama import PromptGenOllamaRewrite
 from .nodes.settings import PromptGenSaveSettings
-from .nodes.video import PromptGenBatchVideo, PromptGenSaveVideoHQ, PromptGenSaveVR180, PromptGenVR180Stereo
+from .nodes.video import (PromptGenBatchVideo, PromptGenSaveVideoHQ, PromptGenSaveVR180, PromptGenVR180,
+                          PromptGenVR180Settings, PromptGenVR180Stereo)
 from .nodes.text import PromptGenLineList, PromptGenShowText, PromptGenTemplate
 
 _NODES = {
@@ -17,7 +18,9 @@ _NODES = {
     "PromptGenBatchImage": (PromptGenBatchImage, "PromptGen Batch Image Loader"),
     "PromptGenSaveSettings": (PromptGenSaveSettings, "PromptGen Save Settings"),
     "PromptGenBatchVideo": (PromptGenBatchVideo, "PromptGen Batch Video Loader"),
-    "PromptGenVR180Stereo": (PromptGenVR180Stereo, "PromptGen Depth to VR180 Stereo"),
+    "PromptGenVR180": (PromptGenVR180, "PromptGen Depth to VR180 Stereo"),
+    "PromptGenVR180Settings": (PromptGenVR180Settings, "PromptGen VR180 Advanced Settings"),
+    "PromptGenVR180Stereo": (PromptGenVR180Stereo, "PromptGen Depth to VR180 Stereo (old, all settings)"),
     "PromptGenSaveVR180": (PromptGenSaveVR180, "PromptGen Save VR180 Video"),
     "PromptGenSaveVideoHQ": (PromptGenSaveVideoHQ, "PromptGen Save Video (High Quality)"),
 }

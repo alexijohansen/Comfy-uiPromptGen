@@ -10,7 +10,8 @@ export const NODES = {
     batchText: "PromptGenBatchText",
     batchImage: "PromptGenBatchImage",
     batchVideo: "PromptGenBatchVideo",
-    stereo: "PromptGenVR180Stereo",
+    stereo: "PromptGenVR180",
+    stereoOld: "PromptGenVR180Stereo",
     saveSettings: "PromptGenSaveSettings",
 };
 
