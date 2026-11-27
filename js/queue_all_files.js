@@ -1,4 +1,4 @@
-// Batch Text / Image Loader: "Queue all files" / "Queue all images" button. Counts the files left
+// Batch Text / Image / Video Loader: "Queue all files" / "images" / "videos" button. Counts the files left
 // in the folder (from index to the end) and queues that many runs.
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
@@ -8,6 +8,7 @@ import { NODES, chain, getWidget, notify } from "./common.js";
 const BUTTONS = {
     [NODES.batchText]: { kind: "text", title: "Queue all files", noun: "files" },
     [NODES.batchImage]: { kind: "images", title: "Queue all images", noun: "images" },
+    [NODES.batchVideo]: { kind: "videos", title: "Queue all videos", noun: "videos" },
 };
 
 async function countFiles(folder, kind) {

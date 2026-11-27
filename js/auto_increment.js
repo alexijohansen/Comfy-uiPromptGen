@@ -9,6 +9,7 @@ const COUNTING_WIDGET = {
     [NODES.counter]: "current_number",
     [NODES.batchText]: "index",
     [NODES.batchImage]: "index",
+    [NODES.batchVideo]: "index",
 };
 
 function setNumber(node, widget, value) {

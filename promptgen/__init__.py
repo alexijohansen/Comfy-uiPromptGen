@@ -4,6 +4,7 @@ from .nodes.batch import PromptGenBatchImage, PromptGenBatchText
 from .nodes.counter import PromptGenCounter
 from .nodes.ollama import PromptGenOllamaRewrite
 from .nodes.settings import PromptGenSaveSettings
+from .nodes.video import PromptGenBatchVideo, PromptGenSaveVideoHQ, PromptGenSaveVR180, PromptGenVR180Stereo
 from .nodes.text import PromptGenLineList, PromptGenShowText, PromptGenTemplate
 
 _NODES = {
@@ -15,6 +16,10 @@ _NODES = {
     "PromptGenBatchText": (PromptGenBatchText, "PromptGen Batch Text Loader"),
     "PromptGenBatchImage": (PromptGenBatchImage, "PromptGen Batch Image Loader"),
     "PromptGenSaveSettings": (PromptGenSaveSettings, "PromptGen Save Settings"),
+    "PromptGenBatchVideo": (PromptGenBatchVideo, "PromptGen Batch Video Loader"),
+    "PromptGenVR180Stereo": (PromptGenVR180Stereo, "PromptGen Depth to VR180 Stereo"),
+    "PromptGenSaveVR180": (PromptGenSaveVR180, "PromptGen Save VR180 Video"),
+    "PromptGenSaveVideoHQ": (PromptGenSaveVideoHQ, "PromptGen Save Video (High Quality)"),
 }
 
 NODE_CLASS_MAPPINGS = {node_id: cls for node_id, (cls, _) in _NODES.items()}

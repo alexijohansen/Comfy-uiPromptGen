@@ -39,11 +39,11 @@ class BatchFolderNode(AutoIncrementNode):
         # Same index, but the folder's files may have changed.
         return f"{index}|{folder_fingerprint(resolve_folder(folder, output_dir()), cls.EXTENSIONS)}"
 
-    def load(self, path: str) -> tuple:
-        """Outputs for one file (before name, index and total)."""
+    def load(self, path: str, **options) -> tuple:
+        """Outputs for one file (before name, index and total). options: a subclass's extra inputs."""
         raise NotImplementedError
 
-    def run(self, folder, index, auto_increment, when_done, unique_id=None):
+    def run(self, folder, index, auto_increment, when_done, unique_id=None, **options):
         path = resolve_folder(folder, output_dir())
         files = list_files(path, self.EXTENSIONS)
         total = len(files)
@@ -57,7 +57,7 @@ class BatchFolderNode(AutoIncrementNode):
             raise RuntimeError(f"{e} Folder: {path}") from e
 
         fname = files[position]
-        outputs = self.load(os.path.join(path, fname))
+        outputs = self.load(os.path.join(path, fname), **options)
         return {
             "ui": {"next_number": [next_index if auto_increment else index],
                    "loaded": [f"{position + 1}/{total}: {fname}"]},

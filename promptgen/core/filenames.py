@@ -107,3 +107,28 @@ def display_path(path: str, output_dir: str) -> str:
         return os.path.relpath(path, output_dir)
     except ValueError:  # e.g. different drive on Windows
         return path
+
+
+def unique_file_path(filename_prefix: str, name: str | None, output_dir: str, ext: str, suffix: str = "",
+                     default_prefix: str = "promptgen/video") -> str:
+    """Path for a new (not yet written) file, built like the text save nodes do.
+
+    With a name: <prefix + name><suffix><ext>, adding _2, _3, ... before the suffix if it exists.
+    Without: <prefix>_00001<suffix><ext> with the next free number. Never overwrites.
+    """
+    if name:
+        base = combine_name(filename_prefix, name)
+        if not base:
+            raise ValueError(f"File name '{name}' is empty after cleaning.")
+        path, n = resolve_in_output(f"{base}{suffix}{ext}", output_dir), 2
+        while os.path.exists(path):
+            path, n = resolve_in_output(f"{base}_{n}{suffix}{ext}", output_dir), n + 1
+    else:
+        prefix = clean_name(filename_prefix) or default_prefix
+        if str(filename_prefix).strip().endswith(("/", "\\")):
+            prefix = f"{prefix}/{os.path.basename(default_prefix)}"
+        n = 1
+        while os.path.exists(path := resolve_in_output(f"{prefix}_{n:05}{suffix}{ext}", output_dir)):
+            n += 1
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    return path
