@@ -159,13 +159,13 @@ class PromptGenVR180Stereo:
         "Video, which renders and encodes a few frames at a time."
     )
     CATEGORY = VIDEO_CATEGORY
-    RETURN_TYPES = ("VR180_STEREO", "IMAGE", "STRING")
-    RETURN_NAMES = ("stereo", "preview", "info")
+    RETURN_TYPES = ("VR180_STEREO", "IMAGE", "STRING", "IMAGE")
+    RETURN_NAMES = ("stereo", "preview", "info", "debug")
     FUNCTION = "run"
 
     @classmethod
     def INPUT_TYPES(cls):
-        from ..core.vr180 import DEPTH_FORMATS, RESOLUTION_PRESETS, SENSOR_WIDTHS_MM
+        from ..core.vr180 import DEBUG_VIEWS, DEPTH_FORMATS, METHODS, RESOLUTION_PRESETS, SENSOR_WIDTHS_MM
 
         return {
             "required": {
@@ -198,16 +198,19 @@ class PromptGenVR180Stereo:
                 "min_depth_m": ("FLOAT", {"default": 0.3, "min": 0.05, "max": 10.0, "step": 0.05,
                                           "tooltip": "Nothing is treated as closer than this (limits the shift)."}),
                 "near_m": ("FLOAT", {"default": 0.5, "min": 0.05, "max": 100.0, "step": 0.05,
-                                     "tooltip": "For the 'near = white' formats: depth of white."}),
+                                     "tooltip": "Only for the 'near = white' image formats, which have no units: "
+                                                "the distance white stands for. Metric formats take near and far "
+                                                "from the depth data itself."}),
                 "far_m": ("FLOAT", {"default": 30.0, "min": 0.5, "max": 10000.0, "step": 0.5,
-                                    "tooltip": "For the 'near = white' formats: depth of black."}),
+                                    "tooltip": "Only for the 'near = white' image formats: the distance black "
+                                               "stands for."}),
                 "reference_depth_m": ("FLOAT", {"default": 3.0, "min": 0.1, "max": 1000.0, "step": 0.1,
                                                 "tooltip": "For 'relative depth': the median depth in metres."}),
                 "da3_resolution": ("INT", {"default": 504, "min": 140, "max": 2520, "step": 14,
                                            "tooltip": "For 'DA3 Metric-Large raw': the resolution set on "
                                                       "Run Depth Anything 3."}),
                 "iterations": ("INT", {"default": 3, "min": 1, "max": 8,
-                                       "tooltip": "Depth lookups per pixel. 2-3 is plenty."}),
+                                       "tooltip": "Only for method 'fixed point': depth lookups per pixel."}),
                 "depth_blur_px": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 50.0, "step": 0.5,
                                             "tooltip": "Softens depth edges (in source pixels). Less tearing, "
                                                        "slightly rounder edges."}),
@@ -217,6 +220,26 @@ class PromptGenVR180Stereo:
                                        "tooltip": "Frames rendered at once on the GPU. Lower if you run out "
                                                   "of VRAM."}),
                 "preview_frame": ("INT", {"default": 0, "min": 0, "max": 0x7FFFFFFF}),
+                # new inputs go at the end, so saved workflows keep their values
+                "method": (METHODS, {"default": METHODS[0],
+                                     "tooltip": "How each eye finds the depth to use.\n"
+                                                "- ray march: steps along the eye's ray and takes the nearest "
+                                                "surface. Clean edges.\n"
+                                                "- fixed point: the original 3-lookup method. Faster, but can "
+                                                "leave echoes/contour lines next to depth edges."}),
+                "depth_dilate_px": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 20.0, "step": 1.0,
+                                              "tooltip": "Grows near objects in the depth map (source pixels), so "
+                                                         "their edge pixels (hair, outlines) move with them instead "
+                                                         "of being left on the background."}),
+                "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 5.0, "step": 0.05,
+                                       "tooltip": "Multiplies the 3D effect (the shift between the eyes). 0 = flat. "
+                                                  "Same as scaling ipd_mm."}),
+                "near_outlier_percent": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 20.0, "step": 0.1,
+                                                   "tooltip": "Ignore the nearest this-many percent of depth in the "
+                                                              "clip when limiting how near things can be. Stops a few "
+                                                              "bad depth pixels from causing big shifts. 0 = off."}),
+                "debug_view": (DEBUG_VIEWS, {"default": DEBUG_VIEWS[0],
+                                             "tooltip": "What the 'debug' output shows for preview_frame."}),
             },
             "optional": {
                 "images": ("IMAGE", {"tooltip": "The source frames. If empty, the frames in da3_geometry."}),
@@ -227,8 +250,9 @@ class PromptGenVR180Stereo:
 
     def run(self, depth_format, resolution, custom_eye_size, hfov_deg, focal_length_mm, sensor, fov_scale,
             ipd_mm, depth_scale, min_depth_m, near_m, far_m, reference_depth_m, da3_resolution, iterations,
-            depth_blur_px, temporal_smoothing, chunk_size, preview_frame, images=None, da3_geometry=None,
-            depth=None):
+            depth_blur_px, temporal_smoothing, chunk_size, preview_frame, method="ray march (recommended)",
+            depth_dilate_px=0.0, strength=1.0, near_outlier_percent=0.5, debug_view="anaglyph (red/cyan)",
+            images=None, da3_geometry=None, depth=None):
         from ..core import vr180
 
         if images is None and da3_geometry is not None:
@@ -248,22 +272,25 @@ class PromptGenVR180Stereo:
         _, height, width, _ = frames.shape
         settings = vr180.StereoSettings(hfov_deg=hfov_deg, focal_mm=focal_length_mm,
                                         sensor_width_mm=vr180.SENSOR_WIDTHS_MM.get(sensor, 36.0),
-                                        fov_scale=fov_scale, ipd_mm=ipd_mm, iterations=iterations,
-                                        depth_blur_px=depth_blur_px)
+                                        fov_scale=fov_scale, ipd_mm=ipd_mm * strength, iterations=iterations,
+                                        depth_blur_px=depth_blur_px, depth_dilate_px=depth_dilate_px,
+                                        method=method)
         settings.eye_size = vr180.eye_size_for(resolution, custom_eye_size, width, settings)
         factor = vr180.da3_metric_factor(width, height, settings.source_hfov_deg(), da3_resolution)
         inv = vr180.to_inverse_depth(raw.cpu(), depth_format, depth_scale=depth_scale, near_m=near_m, far_m=far_m,
                                      reference_m=reference_depth_m, min_depth_m=min_depth_m, da3_factor=factor,
                                      sky=sky.cpu() if sky is not None else None)
         inv = vr180.temporal_smooth(inv, temporal_smoothing)
+        inv, _ = vr180.clamp_near_outliers(inv, near_outlier_percent)
 
         clip = vr180.StereoClip(frames, inv, settings, chunk_size, torch_device())
         i = min(preview_frame, len(clip) - 1)
         preview = clip.render(i, i + 1).cpu()
+        debug = clip.render_debug(i, debug_view).cpu()
 
         info = self._info(clip, width, height, inv)
         log.info("VR180: %s", info.replace("\n", "; "))
-        return {"ui": {"text": [info]}, "result": (clip, preview, info)}
+        return {"ui": {"text": [info]}, "result": (clip, preview, info, debug)}
 
     @staticmethod
     def _info(clip, width, height, inv) -> str:
@@ -279,10 +306,12 @@ class PromptGenVR180Stereo:
         near = 1 / float(valid.max()) if valid.numel() else float("inf")
         median = 1 / float(valid.median()) if valid.numel() else float("inf")
         vfov = math.degrees(2 * math.atan((height / 2) / f))
-        return (f"{len(clip)} frames, SBS {2 * s.eye_size}x{s.eye_size} ({s.eye_size} per eye)\n"
+        max_shift = math.degrees(math.atan(s.ipd_mm / 2000 * float(inv.max())))
+        return (f"{len(clip)} frames, SBS {2 * s.eye_size}x{s.eye_size} ({s.eye_size} per eye), {s.method}\n"
                 f"Source {width}x{height} shown at {s.shown_hfov_deg():.1f}° x {vfov:.1f}°\n"
                 f"Sharpness: source {src_ppd:.1f} px/deg, output {out_ppd:.1f} px/deg\n"
-                f"Depth: nearest {near:.2f} m, median {median:.2f} m (median of the sample)")
+                f"Depth: nearest {near:.2f} m, median {median:.2f} m\n"
+                f"Largest shift per eye: {max_shift:.2f}° ({max_shift * f * math.pi / 180:.0f} source px)")
 
 
 # ---- Save VR180 Video ------------------------------------------------------------------------

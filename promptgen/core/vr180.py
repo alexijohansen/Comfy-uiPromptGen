@@ -67,7 +67,10 @@ class StereoSettings:
     ipd_mm: float = 64.0
     iterations: int = 3
     depth_blur_px: float = 0.0      # gaussian sigma in source pixels, applied to inverse depth
+    depth_dilate_px: float = 0.0    # max filter radius on inverse depth (grows near objects)
     eye_size: int = 2880
+    method: str = "ray march (recommended)"
+    max_steps: int = 128            # ray march steps cap
 
     def source_hfov_deg(self) -> float:
         if self.focal_mm > 0 and self.sensor_width_mm > 0:
@@ -144,6 +147,19 @@ def da3_metric_factor(src_width: int, src_height: int, hfov_deg: float, da3_reso
     return focal_px(process_width, hfov_deg) / 300.0
 
 
+def clamp_near_outliers(inv: torch.Tensor, percent: float) -> tuple[torch.Tensor, float]:
+    """Limit inverse depth to the clip's (100 - percent)th percentile, so a few bad very-near pixels
+    can't cause big shifts. One limit for the whole clip, so it doesn't change from frame to frame.
+    Returns (clamped, limit)."""
+    valid = inv[inv > 0].flatten()
+    if percent <= 0 or valid.numel() == 0:
+        return inv, float(inv.max()) if inv.numel() else 0.0
+    if valid.numel() > 1_000_000:
+        valid = valid[torch.randint(0, valid.numel(), (1_000_000,))]
+    limit = float(torch.quantile(valid.float(), 1 - percent / 100))
+    return inv.clamp(max=limit), limit
+
+
 def temporal_smooth(inv: torch.Tensor, amount: float) -> torch.Tensor:
     """Exponential moving average over frames (0 = off, 0.9 = very smooth). Reduces depth flicker."""
     if amount <= 0 or inv.shape[0] < 2:
@@ -188,32 +204,141 @@ def _eye_rays(size: int, device, dtype=torch.float32):
     return dx / dz, dy / dz, valid
 
 
+METHODS = ["ray march (recommended)", "fixed point (fast)"]
+DEBUG_VIEWS = ["anaglyph (red/cyan)", "left eye", "right eye", "no stereo (projection only)",
+               "depth (near = white)", "shift map", "left minus right"]
+
+
+def _sample(x: torch.Tensor, u: torch.Tensor, gy: torch.Tensor, W: int, padding: str) -> torch.Tensor:
+    grid = torch.stack([u / W * 2 - 1, gy], dim=-1)
+    return F.grid_sample(x, grid, mode="bilinear", padding_mode=padding, align_corners=False)
+
+
+def _solve_fixed_point(inv, u0, gy, k, W, iterations):
+    """u = u0 + k * invZ(u), by plain iteration. Fast, but can flip between foreground and
+    background next to depth edges (ripples / doubled edges)."""
+    u = u0
+    for _ in range(max(1, iterations)):
+        u = u0 + k * _sample(inv, u, gy, W, "border")[:, 0]
+    return u
+
+
+def _solve_ray_march(inv, u0, gy, k, W, steps, inv_max, refine):
+    """March along the eye's ray from near (inverse depth inv_max) to infinity and stop at the first
+    point where the scene is at least as near as the ray: that's the nearest surface the eye sees
+    (like parallax occlusion mapping). Then refine between the last two steps."""
+    B = inv.shape[0]
+    shape = (B, *u0.shape[-2:])
+    hit_t = torch.zeros(shape, device=u0.device)      # ray inverse depth at the hit, as a fraction of inv_max
+    prev_t = torch.ones(shape, device=u0.device)       # ray t of the step where the hit was found
+    found = torch.zeros(shape, dtype=torch.bool, device=u0.device)
+    prev_diff = torch.full(shape, -1.0, device=u0.device)
+    for i in range(steps + 1):
+        t = 1.0 - i / steps
+        ray_inv = t * inv_max
+        scene = _sample(inv, u0 + k * ray_inv, gy, W, "border")[:, 0]
+        diff = scene - ray_inv                         # >= 0: the scene is in front of the ray point
+        new_hit = (diff >= 0) & ~found
+        if new_hit.any():
+            # linear interpolation between the previous step (diff < 0) and this one
+            frac = torch.where(prev_diff < 0, -prev_diff / (diff - prev_diff + 1e-12), torch.zeros_like(diff))
+            t_hit = (1.0 / steps) * frac
+            t_hit = (t + (1.0 / steps) - t_hit) if i > 0 else torch.full_like(diff, t)
+            hit_t = torch.where(new_hit, t_hit, hit_t)
+            prev_t = torch.where(new_hit, torch.full_like(diff, t), prev_t)
+            found |= new_hit
+        prev_diff = torch.where(found, prev_diff, diff)
+        if bool(found.all()):
+            break
+    u = u0 + k * hit_t * inv_max
+    # a couple of fixed point steps, kept inside the step where the hit was, polish the result
+    a = u0 + k * prev_t * inv_max
+    b = u0 + k * (prev_t + 1.0 / steps).clamp(max=1.0) * inv_max
+    lo, hi = torch.minimum(a, b), torch.maximum(a, b)
+    for _ in range(refine):
+        u = (u0 + k * _sample(inv, u, gy, W, "border")[:, 0]).clamp(min=lo, max=hi)
+    return u
+
+
+def eye_coordinates(frames_shape, inv, settings: "StereoSettings", eye_x: float, device):
+    """Source sample positions (u, gy) for one eye; u in source pixels, gy normalised."""
+    B, H, W = frames_shape[0], frames_shape[1], frames_shape[2]
+    n = settings.eye_size
+    f = focal_px(W, settings.shown_hfov_deg())
+    xn, yn, valid = _eye_rays(n, device)
+    u0 = (W / 2 + f * xn).expand(B, n, n)
+    gy = ((H / 2 + f * yn) / H * 2 - 1).expand(B, n, n)
+    gy = torch.where(valid, gy, torch.full_like(gy, -3.0))  # behind the camera -> outside -> black
+    k = f * eye_x                                           # source px per (1/metre)
+    if k == 0:
+        return u0, gy
+    if settings.method.startswith("fixed"):
+        return _solve_fixed_point(inv, u0, gy, k, W, settings.iterations), gy
+    inv_max = float(inv.max())
+    if inv_max <= 0:
+        return u0, gy
+    # about one source pixel per step; between steps the hit is interpolated
+    steps = int(min(max(abs(k) * inv_max, 8), settings.max_steps))
+    return _solve_ray_march(inv, u0, gy, k, W, steps, inv_max, 0), gy
+
+
+def prepare_depth(inv_depth: torch.Tensor, settings: "StereoSettings") -> torch.Tensor:
+    """(B, H, W) inverse depth -> (B, 1, H, W) after dilation and blur."""
+    inv = inv_depth[:, None].float()
+    if settings.depth_dilate_px > 0:  # grow near objects so their edge pixels move with them
+        r = int(round(settings.depth_dilate_px))
+        inv = F.max_pool2d(F.pad(inv, (r, r, r, r), mode="replicate"), 2 * r + 1, stride=1)
+    return gaussian_blur(inv, settings.depth_blur_px)
+
+
 def render_sbs(frames: torch.Tensor, inv_depth: torch.Tensor, settings: StereoSettings) -> torch.Tensor:
     """Render left|right half-equirect eyes. frames (B, H, W, 3) 0..1, inv_depth (B, H, W) 1/metres,
     both on the device to render on. Returns (B, eye, 2 * eye, 3) float 0..1."""
-    B, H, W, _ = frames.shape
-    n = settings.eye_size
-    f = focal_px(W, settings.shown_hfov_deg())
-    xn, yn, valid = _eye_rays(n, frames.device)
-    u0 = W / 2 + f * xn                     # source pixel coords (pixel centres at i + 0.5)
-    v = H / 2 + f * yn
-    gy = (v / H * 2 - 1).expand(B, n, n)
-    gy = torch.where(valid, gy, torch.full_like(gy, -3.0))  # behind the camera -> outside -> black
+    left, right = render_eyes(frames, inv_depth, settings)
+    return torch.cat([left, right], dim=2)
 
-    img = frames.permute(0, 3, 1, 2).contiguous()           # (B, 3, H, W)
-    inv = gaussian_blur(inv_depth[:, None].float(), settings.depth_blur_px)
 
+def render_eyes(frames, inv_depth, settings, ipd_mm=None):
+    """(left, right), each (B, eye, eye, 3)."""
+    ipd = settings.ipd_mm if ipd_mm is None else ipd_mm
+    W = frames.shape[2]
+    img = frames.permute(0, 3, 1, 2).contiguous()
+    inv = prepare_depth(inv_depth, settings)
     eyes = []
-    for eye_x in (-settings.ipd_mm / 2000.0, settings.ipd_mm / 2000.0):  # left, right (metres)
-        shift_scale = f * eye_x                             # source px per (1/metre)
-        u = u0.expand(B, n, n)
-        for _ in range(max(1, settings.iterations)):
-            grid = torch.stack([u / W * 2 - 1, gy], dim=-1)
-            z_inv = F.grid_sample(inv, grid, mode="bilinear", padding_mode="border", align_corners=False)[:, 0]
-            u = u0 + shift_scale * z_inv
-        grid = torch.stack([u / W * 2 - 1, gy], dim=-1)
-        eyes.append(F.grid_sample(img, grid, mode="bilinear", padding_mode="zeros", align_corners=False))
-    return torch.cat(eyes, dim=3).permute(0, 2, 3, 1).clamp(0, 1)
+    for eye_x in (-ipd / 2000.0, ipd / 2000.0):  # left, right (metres)
+        u, gy = eye_coordinates(frames.shape, inv, settings, eye_x, frames.device)
+        eyes.append(_sample(img, u, gy, W, "zeros").permute(0, 2, 3, 1).clamp(0, 1))
+    return eyes[0], eyes[1]
+
+
+def render_debug(frames, inv_depth, settings, view: str) -> torch.Tensor:
+    """A (B, eye, eye or 2*eye, 3) image to look for problems with."""
+    if view == "no stereo (projection only)":
+        left, _ = render_eyes(frames, inv_depth, settings, ipd_mm=0.0)
+        return left
+    if view in ("depth (near = white)", "shift map"):
+        inv = prepare_depth(inv_depth, settings)
+        u, gy = eye_coordinates(frames.shape, inv, settings, 0.0, frames.device)
+        z = _sample(inv, u, gy, frames.shape[2], "zeros")[:, 0]   # inverse depth as seen on the dome
+        if view == "depth (near = white)":
+            img = (z / max(float(z.max()), 1e-6))[..., None].expand(*z.shape, 3)
+        else:  # degrees each eye's picture is shifted: blue = none, red = most
+            deg = torch.rad2deg(torch.atan(settings.ipd_mm / 2000.0 * z))
+            x = (deg / max(float(deg.max()), 1e-6)).clamp(0, 1)
+            img = torch.stack([x, 1 - (2 * x - 1).abs(), 1 - x], dim=-1)
+        inside = (u >= 0) & (u <= frames.shape[2]) & (gy.abs() <= 1)  # black outside the source frame
+        img = img * inside[..., None]
+        return img.clamp(0, 1)
+    left, right = render_eyes(frames, inv_depth, settings)
+    if view == "left eye":
+        return left
+    if view == "right eye":
+        return right
+    if view == "left minus right":
+        return ((left - right).abs() * 4).clamp(0, 1)
+    # anaglyph: red from the left eye, green/blue from the right
+    grey_l = left.mean(-1, keepdim=True)
+    return torch.cat([grey_l, right[..., 1:2].mean(-1, keepdim=True).expand(*right.shape[:-1], 2)], dim=-1)
 
 
 class StereoClip:
@@ -247,6 +372,13 @@ class StereoClip:
         inv = match_depth_size(inv, frames.shape[1], frames.shape[2])
         with torch.no_grad():
             return render_sbs(frames[..., :3], inv, self.settings)
+
+    def render_debug(self, index: int, view: str) -> torch.Tensor:
+        frames = self.frames[index:index + 1].to(self.device, torch.float32)[..., :3]
+        inv = self.inv_depth[0 if self.inv_depth.shape[0] == 1 else index][None].to(self.device, torch.float32)
+        inv = match_depth_size(inv, frames.shape[1], frames.shape[2])
+        with torch.no_grad():
+            return render_debug(frames, inv, self.settings, view)
 
     def chunks(self, high_bit_depth: bool = False):
         """Yield (b, eye, 2*eye, 3) numpy arrays, chunk_size frames at a time: uint8, or uint16 for

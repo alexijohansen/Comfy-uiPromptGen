@@ -275,7 +275,7 @@ Supported files: `.mp4`, `.mov`, `.mkv`, `.webm`, `.avi` and `.m4v`, directly in
 
 Turns a mono video plus a depth map into 180° side-by-side stereo, left eye on the left (VR180 LR). Connect its `stereo` output to **Save VR180 Video**.
 
-How it works: the source is treated as a normal (pinhole) camera with the field of view you set, and is placed on a 180° x 180° dome for each eye, so things keep their real size in the headset. Everything outside the source frame is black. For every pixel of each eye, the node looks up the depth, works out how far that eye sees the point shifted (about IPD/2 divided by the distance), and reads the colour from the source at that spot. It refines this 3 times (`iterations`). Because every output pixel reads from the source, there are never holes to fill. At the edges of near objects the background stretches a little instead. Nothing is generated or inpainted.
+How it works: the source is treated as a normal (pinhole) camera with the field of view you set, and is placed on a 180° x 180° dome for each eye, so things keep their real size in the headset. Everything outside the source frame is black. For every pixel of each eye, the node walks along that eye's line of sight, from near to far, and stops at the first point where the depth map says there's a surface (the shift for a point is about IPD/2 divided by its distance). It then reads the colour from the source at that spot. Because every output pixel reads from the source, there are never holes to fill. At the edges of near objects the background stretches a little instead. Nothing is generated or inpainted.
 
 The node only prepares the clip and renders one preview frame. The Save node renders the frames a few at a time on the GPU and streams them straight into the video file, because a full 7680x3840 frame takes 350 MB as an image and a whole clip would not fit in memory.
 
@@ -294,20 +294,26 @@ The node only prepares the clip and renders one preview frame. The Save node ren
 | `ipd_mm` | FLOAT | Distance between the eyes. Default 64 mm. More gives a stronger 3D effect (the world looks smaller). |
 | `depth_scale` | FLOAT | Multiplies all depths. Above 1 pushes everything away (less 3D), below 1 brings it closer. Default 1. |
 | `min_depth_m` | FLOAT | Nothing is treated as closer than this. Limits the biggest shift. Default 0.3 m. |
-| `near_m`, `far_m` | FLOAT | Only for the two `near = white` formats: the distance of white and of black. Defaults 0.5 m and 30 m. |
+| `near_m`, `far_m` | FLOAT | Only for the two `near = white` formats. Those images have no units (every frame is stretched to black..white), so you say what distance white and black stand for. The metric formats take near and far from the depth data itself. Defaults 0.5 m and 30 m. |
 | `reference_depth_m` | FLOAT | Only for `relative depth`: the clip's median depth is set to this. Default 3 m. |
 | `da3_resolution` | INT | Only for `DA3 Metric-Large raw`: the `resolution` set on Run Depth Anything 3 (default 504). Needed to turn the raw values into metres. |
-| `iterations` | INT | Depth lookups per pixel. 2-3 is plenty. Default 3. |
+| `iterations` | INT | Only for method **fixed point**: depth lookups per pixel. Default 3. |
 | `depth_blur_px` | FLOAT | Softens the depth map (in source pixels) before use. A little blur gives smoother edges. Default 2. |
 | `temporal_smoothing` | FLOAT | Averages the depth over frames to reduce flicker. 0 (off) to 0.95. Default 0. |
 | `chunk_size` | INT | Frames rendered at once on the GPU. Each 2880 px eye pair needs roughly 1 GB of VRAM. Lower it if you run out. Default 2. |
-| `preview_frame` | INT | Which frame to show on the `preview` output. |
+| `preview_frame` | INT | Which frame to show on the `preview` and `debug` outputs. |
+| `method` | list | How each eye finds the depth to use. **ray march** (the default) steps along the eye's ray and takes the nearest surface it hits, so edges stay clean. **fixed point** is the original 3-lookup method: faster, but it can flip between the foreground and background depth next to depth edges, which shows as echoes or contour lines beside outlines. |
+| `depth_dilate_px` | FLOAT | Grows near objects in the depth map by this many source pixels. Depth models often put the edge of hair or an outline on the background's depth, so those pixels stay behind as a halo. 2-4 usually fixes that. Default 0. |
+| `strength` | FLOAT | Multiplies the 3D effect (the shift between the eyes). 0 is flat, 1 is real scale. The same as scaling `ipd_mm`. Default 1. |
+| `near_outlier_percent` | FLOAT | Ignores the nearest this-many percent of the clip's depth when limiting how near things can be, so a few bad depth pixels can't cause big shifts. One limit for the whole clip, so it doesn't change from frame to frame. Default 0.5. |
+| `debug_view` | list | What the `debug` output shows, see [Finding artifacts](#finding-artifacts). |
 
 | Output | Type | Description |
 |---|---|---|
 | `stereo` | VR180_STEREO | The clip to render. Connect to Save VR180 Video. |
 | `preview` | IMAGE | One rendered side-by-side frame at full output size. Connect a Preview Image node to check the settings before rendering a whole clip. |
-| `info` | STRING | Output size, the source's angular size, its sharpness in pixels per degree, and the nearest and median depth. Also shown on the node. |
+| `info` | STRING | Output size, the source's angular size, its sharpness in pixels per degree, the nearest and median depth, and the largest shift. Also shown on the node. |
+| `debug` | IMAGE | One eye-sized picture of `preview_frame`, chosen with `debug_view`. |
 
 | `depth_format` | Use it for | How it is turned into metres |
 |---|---|---|
@@ -406,8 +412,29 @@ Batch Video Loader ── frames ──► Run Depth Anything 3 ◄── Load D
 2. On **Depth to VR180 Stereo**, set `hfov_deg` to your camera's field of view (or set `focal_length_mm` and `sensor`). If you don't know it, 65° is a good start for phone and action-camera-like footage. Leave `depth_format` on `DA3 Metric-Large raw` when you use the Metric-Large model.
 3. Pick an output `resolution`. A 1280 pixel tall 16:9 video at 65° has about 31 pixels per degree, more than even the 7680x3840 preset (21), which the info text on the node shows, so a big preset such as `5760x2880` or `7680x3840` is worth it: each eye is rendered fresh, so more output pixels means sharper eyes, not upscaling blur.
 4. For a quick test, set the loader's `max_frames` to about 30 and queue once. Look at the **preview** (left eye on the left) and the info text on the stereo node. Watch the test clip in your headset.
-5. Adjust if needed: things look too big or too small, change `fov_scale`. The 3D is too strong or too weak, change `depth_scale` or `ipd_mm`. Edges of near objects tear, raise `depth_blur_px`.
+5. Adjust if needed: things look too big or too small, change `fov_scale`. The 3D is too strong or too weak, change `strength`. For artifacts, see [Finding artifacts](#finding-artifacts).
 6. Set `max_frames` back to 0 and click **Queue all videos** on the loader. Every video in the folder becomes a `<name>_180_LR.mp4` in `output/vr180/`.
+
+
+### Finding artifacts
+
+Set the loader's `max_frames` to a few frames, pick a `preview_frame` that shows the problem, connect a Preview Image to the stereo node's `debug` output (the example workflow has one), and try the `debug_view`s:
+
+| `debug_view` | What to look for |
+|---|---|
+| `anaglyph (red/cyan)` | Both eyes in one picture (red = left, cyan = right). With red/cyan glasses you can check the 3D on the monitor. Without them: far things should line up, near things should have colour fringes that get wider the nearer they are. |
+| `left eye`, `right eye` | One eye at full size. Easier to zoom into than the side-by-side preview. |
+| `no stereo (projection only)` | Both eyes with no shift. If something looks wrong here, it's the field of view (`hfov_deg`, `fov_scale`), not the depth. |
+| `depth (near = white)` | The depth as the node uses it, after scaling, sky removal, dilation and blur. Check that it's smooth, that the edges sit on the edges of things in the picture, and that the sky is black. Noise or holes here show up as wobble in the result. |
+| `shift map` | How far each pixel is shifted: blue is none, red the most. One very red spot means a few depth pixels are much too near: raise `near_outlier_percent` or `min_depth_m`. |
+| `left minus right` | Where the eyes differ. Should look like outlines around near objects, fading out with distance. Repeated outlines next to each other are echoes: use method **ray march**. |
+
+Common fixes:
+- **Echoes or contour lines next to outlines:** use method **ray march** (the default since this update).
+- **A halo of the foreground (hair, edges) left on the background:** raise `depth_dilate_px` to 2-4. If the depth edges are blurry in the `depth` view, also raise the `resolution` on Run Depth Anything 3 (for example 1008) and set the same `da3_resolution`.
+- **Background smeared sideways next to near objects:** that's the stretching this method uses instead of hole filling. Lower `strength` or raise `depth_scale` to make it narrower.
+- **Everything feels too strong or too weak:** change `strength`. Check the nearest and median depth in the info text: if they don't look like real distances, the depth format or `da3_resolution` is wrong.
+- **Wobble or flicker between frames:** raise `temporal_smoothing`, or use a video depth model.
 
 ---
 

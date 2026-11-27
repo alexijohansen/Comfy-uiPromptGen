@@ -99,3 +99,36 @@ def test_temporal_smoothing():
     inv = torch.tensor([[[0.0]], [[1.0]], [[1.0]]])
     assert vr180.temporal_smooth(inv, 0.5)[:, 0, 0].tolist() == pytest.approx([0.0, 0.5, 0.75])
     assert vr180.temporal_smooth(inv, 0) is inv
+
+
+def test_clamp_near_outliers():
+    inv = torch.cat([torch.full((999,), 0.5), torch.tensor([50.0])])[None, None]
+    out, limit = vr180.clamp_near_outliers(inv, 0.5)
+    assert limit == pytest.approx(0.5) and float(out.max()) == pytest.approx(0.5)
+    assert vr180.clamp_near_outliers(inv, 0)[0] is inv
+
+
+def test_ray_march_has_no_echoes_at_depth_edges():
+    # A near disc over a far, striped background with a soft depth edge (like real depth models).
+    H, W = 120, 200
+    yy, xx = torch.meshgrid(torch.arange(H), torch.arange(W), indexing="ij")
+    fg = (xx - 100) ** 2 + (yy - 60) ** 2 < 30 ** 2
+    frames = torch.where(fg[..., None], torch.tensor([0.0, 1.0, 0.0]), torch.tensor([1.0, 0.0, 0.0]))[None]
+    inv = vr180.gaussian_blur(torch.where(fg, 1 / 0.5, 1 / 8.0)[None, None].float(), 2)[:, 0]
+    s = vr180.StereoSettings(hfov_deg=60, eye_size=512, depth_blur_px=0)
+    def disc_row(ipd):
+        row = vr180.render_eyes(frames, inv, s, ipd_mm=ipd)[0][0][256, :, 1]  # green through the disc
+        return (row > 0.5).nonzero().flatten()
+
+    flat, left = disc_row(0), disc_row(64)
+    # one solid run (no echoes), and as wide as without stereo (the fixed point method eats into it)
+    assert int(left[-1] - left[0] + 1) == left.numel()
+    assert abs(left.numel() - flat.numel()) <= 3
+
+
+def test_debug_views_render():
+    frames, inv = torch.rand(1, 40, 60, 3), torch.full((1, 40, 60), 0.5)
+    s = vr180.StereoSettings(eye_size=64)
+    for view in vr180.DEBUG_VIEWS:
+        out = vr180.render_debug(frames, inv, s, view)
+        assert out.shape == (1, 64, 64, 3) and torch.isfinite(out).all(), view

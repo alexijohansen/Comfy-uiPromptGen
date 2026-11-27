@@ -145,7 +145,8 @@ def test_stereo_then_save_vr180(out):
     geometry = {"depth": torch.full((3, 36, 64), 2.0), "image": frames, "mode": "mono",
                 "sky": torch.zeros(3, 36, 64)}
     result = PromptGenVR180Stereo().run(**kw, da3_geometry=geometry)
-    clip, preview, info = result["result"]
+    clip, preview, info, debug = result["result"]
+    assert debug.shape == (1, 128, 128, 3)  # anaglyph of one eye
     assert preview.shape == (1, 128, 256, 3) and "SBS 256x128" in info and result["ui"]["text"] == [info]
 
     widgets = {k: v[1]["default"] for k, v in encoder_inputs(codec="h265 (libx265)").items()}
