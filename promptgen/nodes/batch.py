@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 from ..comfy import CATEGORY, output_dir
-from ..core.counting import batch_position, take_number
+from ..core.counting import batch_position, shuffled_order, take_number
 from ..core.textfiles import (IMAGE_EXTENSIONS, TEXT_EXTENSIONS, folder_fingerprint, list_files,
                               read_text_file, resolve_folder)
 from .common import AutoIncrementNode, auto_increment_input
@@ -19,12 +19,13 @@ class BatchFolderNode(AutoIncrementNode):
     EXTENSIONS: tuple[str, ...] = ()
     KIND = ""            # "text" or "images": also used by the "Queue all" button
     DEFAULT_FOLDER = ""
+    RANDOM_ORDER = False  # adds random_order + random_seed inputs
     CATEGORY = CATEGORY
     FUNCTION = "run"
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {
+        types = {
             "required": {
                 "folder": ("STRING", {"default": cls.DEFAULT_FOLDER,
                                       "tooltip": "A full path like D:\\videos, or a folder inside ComfyUI's output "
@@ -40,17 +41,27 @@ class BatchFolderNode(AutoIncrementNode):
             },
             "hidden": cls.HIDDEN,
         }
+        if cls.RANDOM_ORDER:
+            types["required"]["random_order"] = (
+                "BOOLEAN", {"default": False, "label_on": "on", "label_off": "off",
+                            "tooltip": "On: go through the files in a shuffled order, each file once per pass."})
+            types["required"]["random_seed"] = (
+                "INT", {"default": 0, "min": 0, "max": 0xFFFFFFFFFFFFFFFF,
+                        "tooltip": "Picks the shuffled order. Same seed = same order; change it for a new order."})
+        return types
 
     @classmethod
-    def fixed_fingerprint(cls, folder="", index=0, **kwargs):
+    def fixed_fingerprint(cls, folder="", index=0, random_order=False, random_seed=0, **kwargs):
         # Same index, but the folder's files may have changed.
-        return f"{index}|{folder_fingerprint(resolve_folder(folder, output_dir()), cls.EXTENSIONS)}"
+        files = folder_fingerprint(resolve_folder(folder, output_dir()), cls.EXTENSIONS)
+        return f"{index}|{random_order}|{random_seed}|{files}"
 
     def load(self, path: str, **options) -> tuple:
         """Outputs for one file (before name, index and total). options: a subclass's extra inputs."""
         raise NotImplementedError
 
-    def run(self, folder, index, auto_increment, when_done, unique_id=None, **options):
+    def run(self, folder, index, auto_increment, when_done, unique_id=None,
+            random_order=False, random_seed=0, **options):
         path = resolve_folder(folder, output_dir())
         files = list_files(path, self.EXTENSIONS)
         total = len(files)
@@ -63,12 +74,15 @@ class BatchFolderNode(AutoIncrementNode):
         except RuntimeError as e:
             raise RuntimeError(f"{e} Folder: {path}") from e
 
+        if random_order:
+            # Walk the folder in a shuffled order (a new one each pass); index still counts 0, 1, 2 ...
+            position = shuffled_order(total, random_seed, cycle=index // total)[position]
         fname = files[position]
         outputs = self.load(os.path.join(path, fname), **options)
         return {
             "ui": {"next_number": [next_index if auto_increment else index],
-                   "loaded": [f"{position + 1}/{total}: {fname}"]},
-            "result": (*outputs, os.path.splitext(fname)[0], position, total),
+                   "loaded": [f"{index % total + 1}/{total}: {fname}"]},
+            "result": (*outputs, os.path.splitext(fname)[0], index % total, total),
         }
 
 
@@ -91,12 +105,14 @@ class PromptGenBatchText(BatchFolderNode):
 class PromptGenBatchImage(BatchFolderNode):
     DESCRIPTION = (
         "Loads one image (png, jpg, webp, ...) from a folder (sorted by name, index 0 is the first). With "
-        "auto_increment on, each run loads the next image. 'folder' is a full path or a folder inside ComfyUI's "
+        "auto_increment on, each run loads the next image. With random_order on, the images come in a shuffled "
+        "order (each once per pass; random_seed picks the order). 'folder' is a full path or a folder inside ComfyUI's "
         "output folder. Outputs the image, its mask (from transparency) and the file name without extension."
     )
     EXTENSIONS = IMAGE_EXTENSIONS
     KIND = "images"
     DEFAULT_FOLDER = ""
+    RANDOM_ORDER = True
     RETURN_TYPES = ("IMAGE", "MASK", "STRING", "INT", "INT")
     RETURN_NAMES = ("image", "mask", "name", "index", "total")
 

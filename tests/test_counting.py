@@ -30,3 +30,13 @@ def test_batch_position():
     assert batch_position(4, 3, "start over") == (1, 2)
     with pytest.raises(RuntimeError, match="are done"):
         batch_position(3, 3, "stop")
+
+
+def test_shuffled_order_is_a_repeatable_permutation():
+    from promptgen.core.counting import shuffled_order
+
+    order = shuffled_order(10, seed=3)
+    assert sorted(order) == list(range(10))
+    assert order == shuffled_order(10, seed=3)
+    assert order != shuffled_order(10, seed=4) or order != shuffled_order(10, seed=5)
+    assert shuffled_order(10, 3, cycle=1) != order or shuffled_order(10, 3, cycle=2) != order

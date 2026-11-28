@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from collections.abc import Hashable
 
 _state: dict[Hashable, dict[str, int]] = {}
@@ -40,3 +41,14 @@ def batch_position(index: int, total: int, when_done: str) -> tuple[int, int]:
     position = index % total
     next_index = (position + 1) % total if when_done == "start over" else position + 1
     return position, next_index
+
+
+def shuffled_order(total: int, seed: int, cycle: int = 0) -> list[int]:
+    """A random but repeatable order of 0..total-1 for the given seed.
+
+    Every position appears exactly once, so a full pass visits each file once. Each cycle
+    (pass through the folder with 'start over') gets its own order.
+    """
+    order = list(range(total))
+    random.Random(f"{seed}:{cycle}").shuffle(order)
+    return order

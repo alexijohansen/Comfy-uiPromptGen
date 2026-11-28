@@ -188,13 +188,15 @@ Works like the Batch Text Loader, but for images. Each run loads the next image 
 | `index` | INT | Which image to load. `0` is the first image. Images are sorted by name. |
 | `auto_increment` | BOOLEAN | On (the default): `index` goes up by 1 on every run, so each run loads the next image. Off: the same image every run. |
 | `when_done` | list | What happens after the last image. **stop**: the run stops with a message saying all images are done. **start over**: it goes back to the first image. |
+| `random_order` | BOOLEAN | Off (the default): images in name order. On: images in a shuffled order. Every image still comes exactly once per pass through the folder, so nothing is repeated or skipped. With **start over**, each new pass gets a new order. |
+| `random_seed` | INT | Picks the shuffled order. The same seed always gives the same order; change it to get a different one. |
 
 | Output | Type | Description |
 |---|---|---|
 | `image` | IMAGE | The image, the same as Load Image gives (EXIF rotation applied). |
 | `mask` | MASK | From the image's transparency, 1 where it is transparent. All zeros for images without transparency. |
 | `name` | STRING | The file name without extension, for example `prompt_0001`. Useful as the `filename` for what you save. |
-| `index` | INT | The index of the image that was loaded. |
+| `index` | INT | How far into the folder this run is (0, 1, 2 ...). With `random_order` this counts runs, not the image's place in name order. |
 | `total` | INT | How many images are in the folder. |
 
 **Queue all images button:** counts the images left in the folder, from `index` to the end, and queues exactly that many runs.

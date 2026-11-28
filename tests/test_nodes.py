@@ -111,3 +111,24 @@ def test_batch_image_loader_walks_folder(out, monkeypatch):
     assert second["ui"]["next_number"] == [2]
     with pytest.raises(RuntimeError, match="are done"):
         node.run("imgs", 0, True, "stop", unique_id="5")
+
+
+def test_batch_image_random_order_visits_each_once(out, monkeypatch):
+    folder = out / "rand"
+    folder.mkdir()
+    names = [f"img_{i:02}" for i in range(8)]
+    for n in names:
+        (folder / f"{n}.png").write_bytes(b"")
+    monkeypatch.setattr(PromptGenBatchImage, "load", lambda self, path: (None, None))
+    assert "random_order" in PromptGenBatchImage.INPUT_TYPES()["required"]
+    assert "random_order" not in PromptGenBatchText.INPUT_TYPES()["required"]
+
+    node = PromptGenBatchImage()
+    runs = [node.run("rand", 0, True, "stop", unique_id="r", random_order=True, random_seed=42)["result"]
+            for _ in range(8)]
+    seen = [r[2] for r in runs]
+    assert sorted(seen) == names and seen != names       # every image once, not in name order
+    assert [r[3] for r in runs] == list(range(8))        # index still counts up
+    again = PromptGenBatchImage()
+    assert [again.run("rand", i, False, "stop", random_order=True, random_seed=42)["result"][2]
+            for i in range(8)] == seen                   # same seed, same order
