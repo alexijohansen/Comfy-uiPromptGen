@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..comfy import CATEGORY, log
-from ..core.templating import fill_template, unfilled_tags
+from ..core.templating import bag_picker, fill_template, random_pick, unfilled_tags
 from .common import NOT_SAVED, save_and_describe
 
 
@@ -42,10 +42,14 @@ class PromptGenLineList:
         return (text,)
 
 
+PICK_MODES = ["random", "no repeats"]
+
+
 class PromptGenTemplate:
     DESCRIPTION = (
         "Replaces {1}, {2}, ... with a random line from the list plugged into input 1, 2, ... "
-        "A new input slot appears each time you connect one."
+        "A new input slot appears each time you connect one. pick_mode 'no repeats' uses every line of a "
+        "list once before any line comes again, so all lines are used equally."
     )
     CATEGORY = CATEGORY
     RETURN_TYPES = ("STRING",)
@@ -58,12 +62,24 @@ class PromptGenTemplate:
             "required": {
                 "template": ("STRING", {"multiline": True, "default": "The {1} sat on the {2}"}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFFFFFFFFFF, "control_after_generate": True}),
+                "pick_mode": (PICK_MODES, {
+                    "default": "random",
+                    "tooltip": "random: any line, every run. no repeats: each line once (in random order) "
+                               "before lines come again; resets by itself when all lines are used.",
+                }),
             },
             "optional": AnyNumberedInputs(),
+            "hidden": {"unique_id": "UNIQUE_ID"},
         }
 
-    def run(self, template, seed, **lists):
-        result = fill_template(template, {k: v for k, v in lists.items() if k.isdigit()}, seed)
+    @classmethod
+    def IS_CHANGED(cls, pick_mode="random", **kwargs):
+        # 'no repeats' depends on which lines were used before, so it must run every time.
+        return float("nan") if pick_mode == "no repeats" else ""
+
+    def run(self, template, seed, pick_mode="random", unique_id=None, **lists):
+        pick = bag_picker(("template", unique_id)) if pick_mode == "no repeats" else random_pick
+        result = fill_template(template, {k: v for k, v in lists.items() if k.isdigit()}, seed, pick)
         missing = unfilled_tags(result)
         if missing:
             log.warning("No list (or an empty list) for tag(s): %s", ", ".join("{" + m + "}" for m in missing))

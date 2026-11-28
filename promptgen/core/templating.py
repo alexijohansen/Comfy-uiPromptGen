@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Hashable, Mapping
 
 TAG_RE = re.compile(r"\{(\d+)\}")
 
@@ -21,8 +21,41 @@ def split_lines(text: str | None) -> list[str]:
     return entries
 
 
-def fill_template(template: str, lists: Mapping[str, str], seed: int) -> str:
-    """Replace each {N} with a random entry from lists["N"].
+Picker = Callable[[str, list[str], random.Random], str]
+
+
+def random_pick(tag: str, entries: list[str], rng: random.Random) -> str:
+    return rng.choice(entries)
+
+
+# Shuffle bags: per (node, tag, list contents) the lines not used yet. In memory only.
+_bags: dict[Hashable, list[str]] = {}
+
+
+def bag_picker(node_key: Hashable) -> Picker:
+    """Picker that uses every line once, in random order, before any line repeats.
+
+    When all lines of a list have been used, the bag refills by itself. Changing the list
+    (adding, removing or editing a line) starts a fresh bag.
+    """
+    def pick(tag: str, entries: list[str], rng: random.Random) -> str:
+        key = (node_key, tag, tuple(entries))
+        bag = _bags.get(key)
+        if not bag:
+            bag = entries[:]
+            rng.shuffle(bag)
+            _bags[key] = bag
+        return bag.pop()
+    return pick
+
+
+def reset_bags() -> None:
+    """Forget all shuffle bags (used by tests)."""
+    _bags.clear()
+
+
+def fill_template(template: str, lists: Mapping[str, str], seed: int, pick: Picker = random_pick) -> str:
+    """Replace each {N} with an entry from lists["N"], chosen by pick (random by default).
 
     The same tag used twice gets the same pick. Tags without a (non-empty) list are left unchanged.
     """
@@ -31,7 +64,7 @@ def fill_template(template: str, lists: Mapping[str, str], seed: int) -> str:
     for num in sorted({int(n) for n in TAG_RE.findall(template)}):
         entries = split_lines(lists.get(str(num)))
         if entries:
-            picks[str(num)] = rng.choice(entries)
+            picks[str(num)] = pick(str(num), entries, rng)
     return TAG_RE.sub(lambda m: picks.get(m.group(1), m.group(0)), template)
 
 

@@ -61,6 +61,7 @@ The inputs grow by themselves: when you connect the last free input, a new one a
 |---|---|---|
 | `template` | STRING (multiline) | Your prompt, with `{1}`, `{2}`, ... where random entries should go. |
 | `seed` | INT | Controls the random picks. Set the control to *randomize* for new picks every run, or *fixed* to repeat the same prompt. |
+| `pick_mode` | list | **random** (the default): any line can come up on any run. **no repeats**: each list works like a shuffled deck. Every line is used once, in random order, before any line comes again. When all lines have been used, it reshuffles by itself, so over many runs every line is used equally often. |
 | `1`, `2`, ... | STRING | The lists, one per tag number. |
 
 | Output | Type | Description |
@@ -69,6 +70,7 @@ The inputs grow by themselves: when you connect the last free input, a new one a
 
 Notes:
 - If the same tag appears more than once (`{1} ... {1}`), every copy gets the same pick.
+- With **no repeats**, each numbered input keeps its own deck, also in a batch. Editing a list (adding, removing or changing a line) starts a fresh deck. The decks are kept in memory only, so they start fresh when ComfyUI restarts.
 - A tag with no list connected, or with an empty list, is left as it is (for example `{3}`), and a warning is printed in the console.
 
 ### PromptGen Ollama Rewrite
