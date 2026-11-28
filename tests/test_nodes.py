@@ -132,3 +132,9 @@ def test_batch_image_random_order_visits_each_once(out, monkeypatch):
     again = PromptGenBatchImage()
     assert [again.run("rand", i, False, "stop", random_order=True, random_seed=42)["result"][2]
             for i in range(8)] == seen                   # same seed, same order
+
+
+def test_batch_image_empty_folder_is_a_clear_error(out):
+    (out / "empty").mkdir()
+    with pytest.raises(FileNotFoundError, match="No .png"):
+        PromptGenBatchImage().run("empty", 0, True, "start over", random_order=True, random_seed=1)

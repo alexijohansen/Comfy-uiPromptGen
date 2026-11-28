@@ -54,3 +54,32 @@ def test_no_repeats_is_never_cached_but_random_is():
     nan = PromptGenTemplate.IS_CHANGED(pick_mode="no repeats")
     assert nan != nan
     assert PromptGenTemplate.IS_CHANGED(pick_mode="random") == ""
+
+
+def test_no_repeats_never_repeats_across_a_refill():
+    import random
+
+    from promptgen.core import templating
+
+    for seed in range(200):
+        templating.reset_bags()
+        pick = templating.bag_picker("n")
+        picks = [pick("1", ["a", "b", "c"], random.Random(seed * 100 + s)) for s in range(30)]
+        assert all(x != y for x, y in zip(picks, picks[1:]))
+        assert all(sorted(picks[i:i + 3]) == ["a", "b", "c"] for i in range(0, 30, 3))
+
+
+def test_no_repeats_edge_cases():
+    import random
+
+    from promptgen.core import templating
+
+    pick = templating.bag_picker("e")
+    rng = random.Random(0)
+    assert [pick("1", ["only"], rng) for _ in range(3)] == ["only"] * 3       # single line
+    assert {pick("2", ["a", "a", "b"], rng) for _ in range(6)} == {"a", "b"}  # duplicate lines are fine
+    for i in range(50):                                                       # editing the list ...
+        pick("3", [str(i), "x"], rng)
+    assert len(templating._bags) == 3                                         # ... keeps one bag per input
+    assert templating.fill_template("{1} {2}", {"1": "", "2": "\n# only a comment\n"}, 0,
+                                    templating.bag_picker("z")) == "{1} {2}"  # empty lists: no pick, no error

@@ -28,24 +28,33 @@ def random_pick(tag: str, entries: list[str], rng: random.Random) -> str:
     return rng.choice(entries)
 
 
-# Shuffle bags: per (node, tag, list contents) the lines not used yet. In memory only.
-_bags: dict[Hashable, list[str]] = {}
+# Shuffle bags: per (node, tag) the list it was filled from, the lines not used yet and the
+# last pick. In memory only; one bag per input, so editing lists doesn't pile up old bags.
+_bags: dict[Hashable, dict] = {}
 
 
 def bag_picker(node_key: Hashable) -> Picker:
     """Picker that uses every line once, in random order, before any line repeats.
 
-    When all lines of a list have been used, the bag refills by itself. Changing the list
-    (adding, removing or editing a line) starts a fresh bag.
+    When all lines of a list have been used, the bag refills by itself, and the first line of the
+    new round is never the same as the last line of the old one. Changing the list (adding,
+    removing or editing a line) starts a fresh bag.
     """
     def pick(tag: str, entries: list[str], rng: random.Random) -> str:
-        key = (node_key, tag, tuple(entries))
+        key = (node_key, tag)
         bag = _bags.get(key)
-        if not bag:
-            bag = entries[:]
-            rng.shuffle(bag)
-            _bags[key] = bag
-        return bag.pop()
+        if bag is None or bag["entries"] != entries:
+            bag = _bags[key] = {"entries": list(entries), "left": [], "last": None}
+        if not bag["left"]:
+            left = list(entries)
+            rng.shuffle(left)
+            # pop() takes from the end: don't start the new round with the line we just used
+            if len(set(left)) > 1 and left[-1] == bag["last"]:
+                swap = next(i for i in range(len(left) - 2, -1, -1) if left[i] != bag["last"])
+                left[-1], left[swap] = left[swap], left[-1]
+            bag["left"] = left
+        bag["last"] = bag["left"].pop()
+        return bag["last"]
     return pick
 
 

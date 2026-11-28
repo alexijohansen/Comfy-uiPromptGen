@@ -40,3 +40,13 @@ def test_shuffled_order_is_a_repeatable_permutation():
     assert order == shuffled_order(10, seed=3)
     assert order != shuffled_order(10, seed=4) or order != shuffled_order(10, seed=5)
     assert shuffled_order(10, 3, cycle=1) != order or shuffled_order(10, 3, cycle=2) != order
+
+
+def test_batch_edge_cases():
+    from promptgen.core.counting import batch_position, shuffled_order
+
+    with pytest.raises(ValueError):
+        batch_position(0, 0, "start over")                 # empty folder: clear error, no modulo by zero
+    assert batch_position(5, 1, "start over") == (0, 0)    # single file
+    assert shuffled_order(1, 123, cycle=99) == [0]
+    assert sorted(shuffled_order(5, 2**64 - 1, cycle=10**9)) == list(range(5))  # huge seed / index
